@@ -16,8 +16,9 @@ from config import SUPPORTED_PLATFORMS, MAX_FILE_SIZE, TEMP_DIR
 logger = logging.getLogger(__name__)
 
 # ---- Decode cookie env vars into temp files (Railway safe method) ----
-for env_var, out_name in (('IG_COOKIES_B64', 'instagram.json'), ('FB_COOKIES_B64', 'facebook.json')):
+for env_var, out_name in (('IG_COOKIES_B64', 'instagram.txt'), ('FB_COOKIES_B64', 'facebook.txt')):
     b64_data = os.getenv(env_var)
+    logger.info(f"{env_var} present: %s bytes", len(b64_data or ""))
     if b64_data:
         try:
             out_path = pathlib.Path(tempfile.gettempdir()) / out_name
