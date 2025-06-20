@@ -52,6 +52,9 @@ class VideoDownloader:
                 'instagram': {
                     'cookiefile': self.cookies_instagram,
                     'session': self._load_session() or None
+                },
+                'tiktok': {
+                    'remove_watermark': True
                 }
             },
             'http_headers': {
