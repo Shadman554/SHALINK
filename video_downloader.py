@@ -87,6 +87,71 @@ class VideoDownloader:
         with open(self.session_file, 'w') as f:
             json.dump(session, f)
     
+    def _setup_instagram_auth(self):
+        """Comprehensive Instagram auth setup."""
+        auth_methods = [
+            self._try_cookie_auth,
+            self._try_browser_auth,
+            self._try_mobile_api_auth
+        ]
+        
+        for method in auth_methods:
+            if method():
+                return True
+        return False
+
+    def _try_cookie_auth(self):
+        """Try authenticating with provided cookies."""
+        if not self.cookies_instagram:
+            return False
+            
+        try:
+            # Verify cookies contain required fields
+            required = ['sessionid', 'ds_user_id', 'csrftoken']
+            with open(self.cookies_instagram) as f:
+                cookies = f.read()
+                if not all(r in cookies for r in required):
+                    return False
+                    
+            # Test authentication
+            test_url = "https://www.instagram.com/accounts/edit/"
+            with yt_dlp.YoutubeDL({
+                'cookiefile': self.cookies_instagram,
+                'quiet': True
+            }) as ydl:
+                info = ydl.extract_info(test_url, download=False)
+                return bool(info)
+        except Exception:
+            return False
+
+    def _try_browser_auth(self):
+        """Try extracting fresh cookies from browser."""
+        try:
+            temp_opts = {
+                'cookiesfrombrowser': ('chrome',),
+                'quiet': True
+            }
+            with yt_dlp.YoutubeDL(temp_opts) as ydl:
+                info = ydl.extract_info('https://www.instagram.com/', download=False)
+                return bool(info)
+        except Exception:
+            return False
+
+    def _try_mobile_api_auth(self):
+        """Try mobile API authentication."""
+        try:
+            with yt_dlp.YoutubeDL({
+                'http_headers': {
+                    'User-Agent': 'Instagram 219.0.0.12.117 Android',
+                    'X-IG-App-ID': '936619743392459'
+                },
+                'quiet': True
+            }) as ydl:
+                info = ydl.extract_info('https://www.instagram.com/', download=False)
+                return bool(info)
+        except Exception:
+            return False
+    
     def _setup_instagram_authentication(self):
         """Setup Instagram authentication using browser cookie extraction."""
         try:
