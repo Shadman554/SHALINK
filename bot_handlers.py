@@ -27,10 +27,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle video links sent by users."""
     try:
+        if not update.message or not update.message.text:
+            logger.error("No message or text in update")
+            return
+            
         user_message = update.message.text.strip()
         user_id = update.effective_user.id
         
         logger.info(f"Received message from user {user_id}: {user_message}")
+        logger.info(f"Update object: {update}")
+        logger.info(f"Context: {context}")
         
         # Check if message contains a URL
         if not _is_valid_url(user_message):

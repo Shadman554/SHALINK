@@ -3,9 +3,13 @@ Configuration file for the Telegram bot.
 """
 
 import os
+from dotenv import load_dotenv
 
-# Telegram Bot Token - get from environment or use provided token
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ")
+# Load environment variables from .env file
+load_dotenv()
+
+# Telegram Bot Token - get from environment variables
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 # Supported platforms
 SUPPORTED_PLATFORMS = [
