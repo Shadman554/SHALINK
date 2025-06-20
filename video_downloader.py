@@ -18,9 +18,32 @@ class VideoDownloader:
         # Create temp directory if it doesn't exist
         os.makedirs(TEMP_DIR, exist_ok=True)
         
-        # Initialize cookies file for Instagram
-        self.cookies_file = None
-        self._setup_instagram_authentication()
+        # ---- Cookies setup for Instagram & Facebook ----
+        # Paths can be provided via environment variables or default to files in the repo root
+        self.cookies_instagram: str | None = None
+        self.cookies_facebook: str | None = None
+        self.cookies_file: str | None = None  # backward-compat with older logic
+
+        ig_default = os.path.join(os.getcwd(), "instagram.json")
+        fb_default = os.path.join(os.getcwd(), "facebook.json")
+
+        ig_path = os.getenv("IG_COOKIES_FILE", ig_default)
+        fb_path = os.getenv("FB_COOKIES_FILE", fb_default)
+
+        if os.path.exists(ig_path):
+            self.cookies_instagram = ig_path
+            self.cookies_file = ig_path  # keep alias so existing code still works
+            logger.info(f"Using Instagram cookies file: {ig_path}")
+
+        if os.path.exists(fb_path):
+            self.cookies_facebook = fb_path
+            logger.info(f"Using Facebook cookies file: {fb_path}")
+
+        # Fallback – when no cookie file present locally, try browser extraction (only works on desktop)
+        if not self.cookies_instagram:
+            self._setup_instagram_authentication()
+            if self.cookies_file:  # _setup may have populated this
+                self.cookies_instagram = self.cookies_file
         
         self.ydl_opts = {
             'format': 'best[filesize<50M]/best',  # Best quality under 50MB, fallback to best available
@@ -132,7 +155,7 @@ class VideoDownloader:
         strategies = [
             # Strategy 1: Use browser cookies if available
             {
-                'cookiesfrombrowser': ('chrome', None, None, None) if self.cookies_file else None,
+                'cookiefile': self.cookies_instagram if self.cookies_instagram else None,
                 'format': 'best[filesize<50M]/best',
                 'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
             },
@@ -213,7 +236,12 @@ class VideoDownloader:
             if 'instagram.com' in url:
                 return self._download_instagram_video(url)
             
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+            # Clone options so we don't mutate the shared dict
+            ydl_opts = self.ydl_opts.copy()
+            if any(site in url for site in ("facebook.com", "fb.com")) and self.cookies_facebook:
+                ydl_opts["cookiefile"] = self.cookies_facebook
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Extract info first to get title and check file size
                 info = ydl.extract_info(url, download=False)
                 
