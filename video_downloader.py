@@ -37,43 +37,42 @@ class VideoDownloader:
         os.makedirs(TEMP_DIR, exist_ok=True)
         
         # ---- Cookies setup for Instagram & Facebook ----
-        # Paths can be provided via environment variables or default to files in the repo root
         self.cookies_instagram: str | None = None
         self.cookies_facebook: str | None = None
-        self.cookies_file: str | None = None  # backward-compat with older logic
-
-        ig_default = os.path.join(os.getcwd(), "instagram_cookies.txt")
-        fb_default = os.path.join(os.getcwd(), "facebook_cookies.txt")
-
-        ig_path = os.getenv("IG_COOKIES_FILE", ig_default)
-        fb_path = os.getenv("FB_COOKIES_FILE", fb_default)
-
-        if os.path.exists(ig_path):
-            self.cookies_instagram = ig_path
-            self.cookies_file = ig_path  # keep alias so existing code still works
-            logger.info(f"Using Instagram cookies file: {ig_path}")
-
-        if os.path.exists(fb_path):
-            self.cookies_facebook = fb_path
-            logger.info(f"Using Facebook cookies file: {fb_path}")
-
-        # Fallback – when no cookie file present locally, try browser extraction (only works on desktop)
+        
+        # First try loading from base64 env vars (Railway/container friendly)
+        if os.getenv('IG_COOKIES_FILE'):
+            self.cookies_instagram = os.getenv('IG_COOKIES_FILE')
+            logger.info(f"Using Instagram cookies from env: {self.cookies_instagram}")
+        
+        if os.getenv('FB_COOKIES_FILE'):
+            self.cookies_facebook = os.getenv('FB_COOKIES_FILE')
+            logger.info(f"Using Facebook cookies from env: {self.cookies_facebook}")
+        
+        # Fallback to local files if no env vars
+        if not self.cookies_instagram:
+            ig_path = os.path.join(os.getcwd(), "instagram_cookies.txt")
+            if os.path.exists(ig_path):
+                self.cookies_instagram = ig_path
+                logger.info(f"Using local Instagram cookies file: {ig_path}")
+        
+        if not self.cookies_facebook:
+            fb_path = os.path.join(os.getcwd(), "facebook_cookies.txt")
+            if os.path.exists(fb_path):
+                self.cookies_facebook = fb_path
+                logger.info(f"Using local Facebook cookies file: {fb_path}")
+        
+        # Final fallback - try browser extraction (desktop only)
         if not self.cookies_instagram:
             self._setup_instagram_authentication()
-            if self.cookies_file:  # _setup may have populated this
-                self.cookies_instagram = self.cookies_file
         
         self.ydl_opts = {
-            'format': 'best[filesize<50M]/best',  # Best quality under 50MB, fallback to best available
+            'format': 'best[filesize<50M]/best',
             'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
             'noplaylist': True,
             'no_warnings': True,
             'extractaudio': False,
-            'audioformat': 'mp3',
-            'embed_subs': False,
-            'writesubtitles': False,
-            'writeautomaticsub': False,
-            'cookiefile': self.cookies_file,
+            'cookiefile': self.cookies_instagram,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -101,15 +100,15 @@ class VideoDownloader:
             
             # Try to extract Instagram cookies from browser
             if self._try_extract_instagram_cookies(cookies_path):
-                self.cookies_file = cookies_path
+                self.cookies_instagram = cookies_path
                 logger.info("Instagram cookies extracted successfully")
             else:
                 logger.info("Using alternative Instagram access method")
-                self.cookies_file = None
+                self.cookies_instagram = None
                 
         except Exception as e:
             logger.error(f"Instagram authentication setup failed: {e}")
-            self.cookies_file = None
+            self.cookies_instagram = None
     
     def _try_extract_instagram_cookies(self, cookies_path: str) -> bool:
         """Try to extract Instagram cookies using yt-dlp's built-in browser cookie extraction."""
@@ -169,13 +168,25 @@ class VideoDownloader:
     def _download_instagram_video(self, url: str) -> tuple[str | None, str]:
         """Download Instagram video with enhanced error handling."""
         
+        # Verify cookies are valid before trying
+        if self.cookies_instagram and not os.path.exists(self.cookies_instagram):
+            logger.warning("Instagram cookie file not found, falling back to other methods")
+            self.cookies_instagram = None
+        
         # Try different Instagram extraction strategies
         strategies = [
             # Strategy 1: Use browser cookies if available
             {
-                'cookiefile': self.cookies_instagram if self.cookies_instagram else None,
+                'cookiefile': self.cookies_instagram,
                 'format': 'best[filesize<50M]/best',
                 'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+                'extractor_args': {
+                    'instagram': {
+                        'api_hostname': 'i.instagram.com',
+                        'include_stories': False,
+                        'cookiefile': self.cookies_instagram
+                    }
+                }
             },
             # Strategy 2: Use mobile user agent
             {
