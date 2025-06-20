@@ -12,6 +12,8 @@ import tempfile
 import json
 from urllib.parse import urlparse
 from config import SUPPORTED_PLATFORMS, MAX_FILE_SIZE, TEMP_DIR
+import requests
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -35,52 +37,63 @@ class VideoDownloader:
         """Initialize with persistent session support."""
         os.makedirs(TEMP_DIR, exist_ok=True)
         
-        # Persistent session file
-        self.session_file = os.path.join(TEMP_DIR, 'instagram_session.json')
-        
-        # Enhanced cookie handling
+        # Enhanced Instagram cookie handling
         self.cookies_instagram = self._validate_cookies(
-            os.getenv('IG_COOKIES_FILE'), 
-            os.path.join(os.getcwd(), "instagram_cookies.txt")
+            os.getenv('IG_COOKIES_FILE'),
+            os.path.join(os.getcwd(), "instagram_cookies.txt"),
+            os.path.join(tempfile.gettempdir(), "instagram.txt")
         )
         
+        # Base download options
         self.ydl_opts = {
             'format': 'best',
             'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.instagram.com/'
+            },
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4'
+            }]
+        }
+        
+        # Instagram specific options
+        self.instagram_opts = {
             'cookiefile': self.cookies_instagram,
             'extractor_args': {
                 'instagram': {
                     'cookiefile': self.cookies_instagram,
                     'session': self._load_session() or None
                 }
-            },
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.tiktok.com/'
-            },
-            'postprocessors': [{
-                'key': 'Exec',
-                'exec_cmd': 'ffmpeg -i {} -c copy -metadata:s:v:0 rotate=0 {}',
-                'when': 'after_move'
-            }]
+            }
         }
         
-        # TikTok specific options
+        # TikTok specific options - using dd01 API for watermark removal
         self.tiktok_opts = {
-            'extractor': 'snaptik',
+            'extractor': 'tiktok',
+            'referer': 'https://www.tiktok.com/',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
             'postprocessors': [{
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4'
             }]
         }
-    
+        
+        # Alternative TikTok watermark removal API
+        self.tiktok_api_url = "https://api.dd01.ru/api/tiktok?url="
+        
     def _validate_cookies(self, *cookie_paths):
-        """Validate and return first working cookie file."""
+        """Validate and return first working cookie file with all required fields."""
+        required_fields = ['sessionid', 'ds_user_id', 'csrftoken']
         for path in cookie_paths:
             if path and os.path.exists(path):
                 try:
                     with open(path) as f:
-                        if 'sessionid' in f.read():
+                        content = f.read()
+                        if all(field in content for field in required_fields):
                             return path
                 except Exception:
                     continue
@@ -239,49 +252,80 @@ class VideoDownloader:
             return False
     
     def _download_instagram_video(self, url: str) -> tuple[str | None, str]:
-        """Enhanced Instagram downloader with proxy support."""
-        
-        # Get proxy if configured
-        proxy = os.getenv('INSTAGRAM_PROXY')
-        
-        strategies = [
-            # Strategy 1: Cookies + Mobile Headers
-            {
-                'cookiefile': self.cookies_instagram,
-                'proxy': proxy,
-                'http_headers': {
-                    'User-Agent': 'Instagram 219.0.0.12.117 Android',
-                    'X-IG-App-ID': '936619743392459'
-                },
-                'extractor_args': {
-                    'instagram': {
-                        'use_proxy': bool(proxy),
-                        'session': self._load_session()
-                    }
-                }
-            },
-            # Strategy 2: Embed Page Fallback
-            {
-                'proxy': proxy,
-                'extractor_args': {
-                    'instagram': {
-                        'use_embed_page': True,
-                        'use_proxy': bool(proxy)
-                    }
-                }
-            }
-        ]
-        
-        for i, opts in enumerate(strategies, 1):
+        """Enhanced Instagram downloader with better cookie handling."""
+        try:
+            if not self.cookies_instagram:
+                return None, "instagram_auth_required"
+                
+            ydl_opts = {**self.ydl_opts, **self.instagram_opts}
+            
+            # Try with cookies first
+            for attempt in range(3):
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        if not info:
+                            continue
+                            
+                        ydl.download([url])
+                        title = info.get('title', 'instagram_video')
+                        downloaded_file = self._find_downloaded_file(title)
+                        
+                        if downloaded_file and os.path.exists(downloaded_file):
+                            return downloaded_file, title
+                except Exception as e:
+                    logger.warning(f"Instagram download attempt {attempt + 1} failed: {e}")
+                    if attempt == 2:
+                        raise
+                    time.sleep(1)
+                    
+            return None, "instagram_download_failed"
+            
+        except Exception as e:
+            logger.error(f"Instagram download error: {e}")
+            return None, "instagram_download_failed"
+            
+    def _download_tiktok_video(self, url: str) -> tuple[str | None, str]:
+        """TikTok downloader with watermark removal fallbacks."""
+        try:
+            # First try with direct API
             try:
-                logger.info(f"Trying Instagram strategy {i}")
-                result = self._try_download(url, opts)
-                if result[0]:
-                    return result
-            except Exception as e:
-                logger.debug(f"Strategy {i} failed: {str(e)}")
-        
-        return None, "instagram_download_failed"
+                api_url = f"{self.tiktok_api_url}{url}"
+                response = requests.get(api_url, timeout=10)
+                if response.status_code == 200:
+                    video_url = response.json().get('url')
+                    if video_url:
+                        return self._download_from_url(video_url, "tiktok_video")
+            except Exception as api_error:
+                logger.warning(f"TikTok API failed, falling back to yt-dlp: {api_error}")
+            
+            # Fallback to yt-dlp
+            ydl_opts = {**self.ydl_opts, **self.tiktok_opts}
+            
+            for attempt in range(3):
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        if not info:
+                            continue
+                            
+                        ydl.download([url])
+                        title = info.get('title', 'tiktok_video')
+                        downloaded_file = self._find_downloaded_file(title)
+                        
+                        if downloaded_file and os.path.exists(downloaded_file):
+                            return downloaded_file, title
+                except Exception as e:
+                    logger.warning(f"TikTok download attempt {attempt + 1} failed: {e}")
+                    if attempt == 2:
+                        raise
+                    time.sleep(1)
+                    
+            return None, "tiktok_download_failed"
+            
+        except Exception as e:
+            logger.error(f"TikTok download error: {e}")
+            return None, "tiktok_download_failed"
     
     def _try_download(self, url: str, opts: dict) -> tuple[str | None, str]:
         """Try downloading video with given options."""
@@ -339,13 +383,13 @@ class VideoDownloader:
             if 'instagram.com' in url:
                 return self._download_instagram_video(url)
             
+            # Try TikTok-specific approach if it's a TikTok URL
+            if 'tiktok.com' in url:
+                return self._download_tiktok_video(url)
+            
             # Clone options so we don't mutate the shared dict
             ydl_opts = self.ydl_opts.copy()
             
-            # Use TikTok specific options if TikTok URL
-            if 'tiktok.com' in url:
-                ydl_opts.update(self.tiktok_opts)
-                
             if any(site in url for site in ("facebook.com", "fb.com")) and self.cookies_facebook:
                 ydl_opts["cookiefile"] = self.cookies_facebook
 
