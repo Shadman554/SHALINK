@@ -52,15 +52,26 @@ class VideoDownloader:
                 'instagram': {
                     'cookiefile': self.cookies_instagram,
                     'session': self._load_session() or None
-                },
-                'tiktok': {
-                    'remove_watermark': True
                 }
             },
             'http_headers': {
-                'User-Agent': 'Instagram 219.0.0.12.117 Android',
-                'X-IG-App-ID': '936619743392459'
-            }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.tiktok.com/'
+            },
+            'postprocessors': [{
+                'key': 'Exec',
+                'exec_cmd': 'ffmpeg -i {} -c copy -metadata:s:v:0 rotate=0 {}',
+                'when': 'after_move'
+            }]
+        }
+        
+        # TikTok specific options
+        self.tiktok_opts = {
+            'extractor': 'snaptik',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4'
+            }]
         }
     
     def _validate_cookies(self, *cookie_paths):
@@ -330,6 +341,11 @@ class VideoDownloader:
             
             # Clone options so we don't mutate the shared dict
             ydl_opts = self.ydl_opts.copy()
+            
+            # Use TikTok specific options if TikTok URL
+            if 'tiktok.com' in url:
+                ydl_opts.update(self.tiktok_opts)
+                
             if any(site in url for site in ("facebook.com", "fb.com")) and self.cookies_facebook:
                 ydl_opts["cookiefile"] = self.cookies_facebook
 
@@ -347,8 +363,16 @@ class VideoDownloader:
                 if filesize and filesize > MAX_FILE_SIZE:
                     return None, "file_too_large"
                 
-                # Download the video
-                ydl.download([url])
+                # Download the video with retries
+                for attempt in range(3):
+                    try:
+                        ydl.download([url])
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            raise
+                        logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                        time.sleep(1)
                 
                 # Find the downloaded file
                 downloaded_file = self._find_downloaded_file(title)
