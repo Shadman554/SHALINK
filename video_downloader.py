@@ -37,6 +37,9 @@ class VideoDownloader:
         """Initialize with persistent session support."""
         os.makedirs(TEMP_DIR, exist_ok=True)
         
+        # Persistent session file
+        self.session_file = os.path.join(TEMP_DIR, 'instagram_session.json')
+        
         # Enhanced Instagram cookie handling
         self.cookies_instagram = self._validate_cookies(
             os.getenv('IG_COOKIES_FILE'),
