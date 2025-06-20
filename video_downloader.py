@@ -6,11 +6,28 @@ import os
 import tempfile
 import yt_dlp
 import logging
+import base64
+import pathlib
+import tempfile
 import json
 from urllib.parse import urlparse
 from config import SUPPORTED_PLATFORMS, MAX_FILE_SIZE, TEMP_DIR
 
 logger = logging.getLogger(__name__)
+
+# ---- Decode cookie env vars into temp files (Railway safe method) ----
+for env_var, out_name in (('IG_COOKIES_B64', 'instagram.json'), ('FB_COOKIES_B64', 'facebook.json')):
+    b64_data = os.getenv(env_var)
+    if b64_data:
+        try:
+            out_path = pathlib.Path(tempfile.gettempdir()) / out_name
+            out_path.write_bytes(base64.b64decode(b64_data))
+            # expose path to downstream logic
+            os.environ[f"{env_var[:-4]}FILE"] = str(out_path)  # sets IG_COOKIES_FILE / FB_COOKIES_FILE
+            logger.info(f"Decoded {env_var} to {out_path}")
+        except Exception as e:
+            logger.error(f"Failed to decode {env_var}: {e}")
+# --------------------------------------------------------------------
 
 class VideoDownloader:
     def __init__(self):
