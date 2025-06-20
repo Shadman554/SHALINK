@@ -42,8 +42,8 @@ class VideoDownloader:
         self.cookies_facebook: str | None = None
         self.cookies_file: str | None = None  # backward-compat with older logic
 
-        ig_default = os.path.join(os.getcwd(), "instagram.json")
-        fb_default = os.path.join(os.getcwd(), "facebook.json")
+        ig_default = os.path.join(os.getcwd(), "instagram_cookies.txt")
+        fb_default = os.path.join(os.getcwd(), "facebook_cookies.txt")
 
         ig_path = os.getenv("IG_COOKIES_FILE", ig_default)
         fb_path = os.getenv("FB_COOKIES_FILE", fb_default)
