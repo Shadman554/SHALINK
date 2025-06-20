@@ -80,7 +80,11 @@ async def handle_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if result == "unsupported_platform":
                 await update.message.reply_text(MESSAGES["error_unsupported"])
             elif result == "file_too_large":
-                await update.message.reply_text("ڤیدیۆکە زۆر گەورەیە، ناتوانرێت بنێردرێت")
+                await update.message.reply_text(MESSAGES["error_file_too_large"])
+            elif result == "instagram_auth_required":
+                await update.message.reply_text(MESSAGES["error_instagram_auth_required"])
+            elif result == "extract_failed" and "instagram.com" in user_message.lower():
+                await update.message.reply_text(MESSAGES["error_instagram_auth"])
             else:
                 await update.message.reply_text(MESSAGES["error_download_failed"])
             

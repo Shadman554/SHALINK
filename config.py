@@ -13,10 +13,11 @@ SUPPORTED_PLATFORMS = [
     "instagram.com",
     "facebook.com",
     "fb.com",
-    "instagram.com/reel",
-    "instagram.com/p/",
     "vm.tiktok.com",
-    "vt.tiktok.com"
+    "vt.tiktok.com",
+    "www.instagram.com",
+    "www.tiktok.com",
+    "www.facebook.com"
 ]
 
 # Kurdish messages
@@ -26,7 +27,10 @@ MESSAGES = {
     "completed": "فەرموو ئەوەش ڤیدیۆکەت",
     "error_invalid_link": "لینکەکە دروست نییە، تکایە لینکێکی دروست دابنێ",
     "error_download_failed": "ڕووداوێک ڕووی دا لە دابەزاندنی ڤیدیۆکە، تکایە دووبارە تاقی بکەوە",
-    "error_unsupported": "ئەم لینکە پشتگیری ناکرێت، تکایە لینکی TikTok، Instagram یان Facebook بەکاربهێنە"
+    "error_unsupported": "ئەم لینکە پشتگیری ناکرێت، تکایە لینکی TikTok، Instagram یان Facebook بەکاربهێنە",
+    "error_instagram_auth": "Instagram ڤیدیۆکان پێویستیان بە چاوەڕوانی زیاترە، تکایە چەند چرکەیەک چاوەڕێ بە و دووبارە تاقی بکەوە",
+    "error_instagram_auth_required": "Instagram ڤیدیۆ دابەزاندن پێویستی بە تۆماربوونە، تکایە دووبارە تاقی بکەوە یان لینکێکی TikTok بەکاربهێنە",
+    "error_file_too_large": "ڤیدیۆکە زۆر گەورەیە، ناتوانرێت بنێردرێت"
 }
 
 # Download settings

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def main():
     """Main function to run the Telegram bot."""
     try:
-        # Create the Application
+        # Create the Application with conflict resolution
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Add handlers
@@ -29,8 +29,15 @@ def main():
         
         logger.info("Bot started successfully")
         
-        # Run the bot
-        application.run_polling(allowed_updates=["message"])
+        # Run the bot with conflict resolution
+        application.run_polling(
+            allowed_updates=["message"],
+            drop_pending_updates=True,
+            timeout=30,
+            read_timeout=20,
+            write_timeout=20,
+            connect_timeout=20
+        )
         
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
