@@ -72,12 +72,15 @@ class VideoDownloader:
             }
         }
         
-        # TikTok specific options - using dd01 API for watermark removal
+        # TikTok specific options
         self.tiktok_opts = {
             'extractor': 'tiktok',
             'referer': 'https://www.tiktok.com/',
             'headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br'
             },
             'postprocessors': [{
                 'key': 'FFmpegVideoConvertor',
@@ -85,8 +88,12 @@ class VideoDownloader:
             }]
         }
         
-        # Alternative TikTok watermark removal API
-        self.tiktok_api_url = "https://api.dd01.ru/api/tiktok?url="
+        # TikTok watermark removal APIs (will try in order)
+        self.tiktok_apis = [
+            "https://api.tikmate.app/api/list",
+            "https://api.douyin.wtf/api",
+            "https://api.dd01.ru/api/tiktok"
+        ]
         
     def _validate_cookies(self, *cookie_paths):
         """Validate and return first working cookie file with all required fields."""
@@ -289,21 +296,34 @@ class VideoDownloader:
             return None, "instagram_download_failed"
             
     def _download_tiktok_video(self, url: str) -> tuple[str | None, str]:
-        """TikTok downloader with watermark removal fallbacks."""
+        """TikTok downloader with multiple watermark removal options."""
         try:
-            # First try with direct API
-            try:
-                api_url = f"{self.tiktok_api_url}{url}"
-                response = requests.get(api_url, timeout=10)
-                if response.status_code == 200:
-                    video_url = response.json().get('url')
+            # First try with direct APIs
+            for api_url in self.tiktok_apis:
+                try:
+                    if 'tikmate' in api_url:
+                        payload = {"url": url, "count": 1}
+                        response = requests.post(api_url, data=payload, timeout=15)
+                        video_url = response.json()[0].get('url')
+                    else:
+                        response = requests.get(f"{api_url}?url={url}", timeout=15)
+                        video_url = response.json().get('url')
+                        
                     if video_url:
                         return self._download_from_url(video_url, "tiktok_video")
-            except Exception as api_error:
-                logger.warning(f"TikTok API failed, falling back to yt-dlp: {api_error}")
+                except Exception as api_error:
+                    logger.warning(f"TikTok API {api_url} failed: {api_error}")
             
-            # Fallback to yt-dlp
-            ydl_opts = {**self.ydl_opts, **self.tiktok_opts}
+            # Fallback to yt-dlp with enhanced options
+            ydl_opts = {
+                **self.ydl_opts,
+                **self.tiktok_opts,
+                'extractor_args': {
+                    'tiktok': {
+                        'force_generic_extractor': True
+                    }
+                }
+            }
             
             for attempt in range(3):
                 try:
