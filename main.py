@@ -10,14 +10,15 @@ import time
 from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config import BOT_TOKEN
-from bot_handlers import start_command, handle_video_link
 
-# Configure logging
+# Configure logging before importing modules that may log during import
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+from bot_handlers import start_command, handle_video_link
 
 def main():
     """Main function to run the Telegram bot.
