@@ -31,6 +31,7 @@ for env_var, out_name in (('IG_COOKIES_B64', 'instagram.txt'), ('FB_COOKIES_B64'
         except Exception as e:
             logger.error(f"Failed to decode {env_var}: {e}")
 # --------------------------------------------------------------------
+import re  # used for sanitising filenames
 
 class VideoDownloader:
     def __init__(self):
@@ -88,11 +89,11 @@ class VideoDownloader:
             }]
         }
         
-        # TikTok watermark removal APIs (will try in order)
+        # TikTok watermark-removal APIs (tried in order – these all return **non-watermarked** links)
         self.tiktok_apis = [
-            "https://api.tikmate.app/api/list",
-            "https://api.douyin.wtf/api",
-            "https://api.dd01.ru/api/tiktok"
+            "https://tikwm.com/api",           # GET ?url=<video_url>&hd=1  → json.data.url / json.data.hdplay
+            "https://api.douyin.wtf/api",      # GET ?url=<video_url>        → json.url
+            "https://api.dd01.ru/api/tiktok"   # GET ?url=<video_url>        → json.url
         ]
         
     def _validate_cookies(self, *cookie_paths):
@@ -295,22 +296,28 @@ class VideoDownloader:
             logger.error(f"Instagram download error: {e}")
             return None, "instagram_download_failed"
             
-    def _download_tiktok_video(self, url: str) -> tuple[str | None, str]:
+    def _download_tiktok_video(self, url: str) -> tuple[str | None, str | None]:
         """TikTok downloader with multiple watermark removal options."""
         try:
-            # First try with direct APIs
+            # --------------------------------------------------
+            # 1. Try public API services that return NO-WATERMARK links
+            # --------------------------------------------------
             for api_url in self.tiktok_apis:
                 try:
-                    if 'tikmate' in api_url:
-                        payload = {"url": url, "count": 1}
-                        response = requests.post(api_url, data=payload, timeout=15)
-                        video_url = response.json()[0].get('url')
+                    if "tikwm.com" in api_url:
+                        # tikwm expects GET params, not payload
+                        response = requests.get(f"{api_url}?url={url}&hd=1", timeout=20)
+                        data = response.json().get("data", {}) if response.ok else {}
+                        video_url = data.get("hdplay") or data.get("url")
+                        title = data.get("title") or "tiktok_video"
                     else:
-                        response = requests.get(f"{api_url}?url={url}", timeout=15)
-                        video_url = response.json().get('url')
+                        response = requests.get(f"{api_url}?url={url}", timeout=20)
+                        json_data = response.json() if response.ok else {}
+                        video_url = json_data.get("url") or json_data.get("nwm_url")
+                        title = json_data.get("title") or "tiktok_video"
                         
                     if video_url:
-                        return self._download_from_url(video_url, "tiktok_video")
+                        return self._download_from_url(video_url, title)
                 except Exception as api_error:
                     logger.warning(f"TikTok API {api_url} failed: {api_error}")
             
@@ -318,11 +325,7 @@ class VideoDownloader:
             ydl_opts = {
                 **self.ydl_opts,
                 **self.tiktok_opts,
-                'extractor_args': {
-                    'tiktok': {
-                        'force_generic_extractor': True
-                    }
-                }
+                'extractor_args': {}
             }
             
             for attempt in range(3):
@@ -461,6 +464,38 @@ class VideoDownloader:
             logger.error(f"Unexpected error downloading {url}: {e}")
             return None, "download_failed"
     
+    def _download_from_url(self, video_url: str, title: str) -> tuple[str | None, str | None]:
+        """Download the file at `video_url` directly to TEMP_DIR.
+
+        This helper is primarily used for TikTok APIs that already expose a
+        non-watermarked direct link. It streams the content to disk so that
+        even large files do not exhaust memory.
+        """
+        try:
+            # Sanitise title for filesystem
+            safe_title = re.sub(r"[^\w\- ]", "", title)[:50] or "tiktok_video"
+            dst = os.path.join(TEMP_DIR, f"{safe_title}_{int(time.time())}.mp4")
+            with requests.get(video_url, stream=True, timeout=30) as r:
+                r.raise_for_status()
+                with open(dst, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            # Enforce file-size limit
+            if os.path.getsize(dst) > MAX_FILE_SIZE:
+                os.remove(dst)
+                return None, "file_too_large"
+            return dst, safe_title
+        except Exception as e:
+            logger.error(f"Direct download failed: {e}")
+            # Clean up partial file
+            try:
+                if os.path.exists(dst):
+                    os.remove(dst)
+            except Exception:
+                pass
+            return None, "download_failed"
+
     def _find_downloaded_file(self, title: str) -> str | None:
         """Find the downloaded file in the temp directory."""
         try:
