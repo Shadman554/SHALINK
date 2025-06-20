@@ -225,86 +225,87 @@ class VideoDownloader:
             return False
     
     def _download_instagram_video(self, url: str) -> tuple[str | None, str]:
-        """Download Instagram video with enhanced error handling."""
+        """Enhanced Instagram downloader with proxy support."""
         
-        # Verify cookies are valid before trying
-        if self.cookies_instagram and not os.path.exists(self.cookies_instagram):
-            logger.warning("Instagram cookie file not found, falling back to other methods")
-            self.cookies_instagram = None
+        # Get proxy if configured
+        proxy = os.getenv('INSTAGRAM_PROXY')
         
-        # Try different Instagram extraction strategies
         strategies = [
-            # Strategy 1: Use browser cookies if available
+            # Strategy 1: Cookies + Mobile Headers
             {
                 'cookiefile': self.cookies_instagram,
-                'format': 'best[filesize<50M]/best',
-                'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+                'proxy': proxy,
+                'http_headers': {
+                    'User-Agent': 'Instagram 219.0.0.12.117 Android',
+                    'X-IG-App-ID': '936619743392459'
+                },
                 'extractor_args': {
                     'instagram': {
-                        'api_hostname': 'i.instagram.com',
-                        'include_stories': False,
-                        'cookiefile': self.cookies_instagram
+                        'use_proxy': bool(proxy),
+                        'session': self._load_session()
                     }
                 }
             },
-            # Strategy 2: Use mobile user agent
+            # Strategy 2: Embed Page Fallback
             {
-                'format': 'best[filesize<50M]/best',
-                'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
-                'http_headers': {
-                    'User-Agent': 'Instagram 219.0.0.12.117 Android (29/10; 300dpi; 720x1440; samsung; SM-A505F; a50; exynos9610; en_US; 331433749)',
-                    'Accept': '*/*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate',
-                    'X-IG-App-ID': '936619743392459',
-                    'X-ASBD-ID': '198387',
-                    'X-IG-WWW-Claim': '0',
-                    'Origin': 'https://www.instagram.com',
-                    'Referer': 'https://www.instagram.com/',
+                'proxy': proxy,
+                'extractor_args': {
+                    'instagram': {
+                        'use_embed_page': True,
+                        'use_proxy': bool(proxy)
+                    }
                 }
-            },
-            # Strategy 3: Fallback with basic settings
-            {
-                'format': 'worst[filesize<50M]/worst',
-                'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
-                'ignoreerrors': True,
-                'no_warnings': True,
             }
         ]
         
-        for i, strategy_opts in enumerate(strategies, 1):
+        for i, opts in enumerate(strategies, 1):
             try:
-                logger.info(f"Trying Instagram download strategy {i}")
+                logger.info(f"Trying Instagram strategy {i}")
+                result = self._try_download(url, opts)
+                if result[0]:
+                    return result
+            except Exception as e:
+                logger.debug(f"Strategy {i} failed: {str(e)}")
+        
+        return None, "instagram_download_failed"
+    
+    def _try_download(self, url: str, opts: dict) -> tuple[str | None, str]:
+        """Try downloading video with given options."""
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    return None, "extract_failed"
                 
-                with yt_dlp.YoutubeDL(strategy_opts) as ydl:
-                    # Extract info first
-                    info = ydl.extract_info(url, download=False)
-                    
-                    if not info:
-                        continue
-                    
-                    title = info.get('title', f'instagram_video_{i}')
-                    
-                    # Check file size
-                    filesize = info.get('filesize') or info.get('filesize_approx')
-                    if filesize and filesize > MAX_FILE_SIZE:
+                title = info.get('title', 'video')
+                
+                # Check if file size is available and within limits
+                filesize = info.get('filesize') or info.get('filesize_approx')
+                if filesize and filesize > MAX_FILE_SIZE:
+                    return None, "file_too_large"
+                
+                # Download the video
+                ydl.download([url])
+                
+                # Find the downloaded file
+                downloaded_file = self._find_downloaded_file(title)
+                
+                if downloaded_file and os.path.exists(downloaded_file):
+                    # Check actual file size
+                    if os.path.getsize(downloaded_file) > MAX_FILE_SIZE:
+                        os.remove(downloaded_file)
                         return None, "file_too_large"
                     
-                    # Download the video
-                    ydl.download([url])
+                    return downloaded_file, title
+                else:
+                    return None, "download_failed"
                     
-                    # Find the downloaded file
-                    downloaded_file = self._find_downloaded_file(title)
-                    
-                    if downloaded_file:
-                        logger.info(f"Instagram download successful with strategy {i}")
-                        return downloaded_file, title
-                        
-            except Exception as e:
-                logger.debug(f"Instagram strategy {i} failed: {e}")
-                continue
-        
-        return None, "instagram_auth_required"
+        except yt_dlp.DownloadError as e:
+            logger.error(f"yt-dlp download error: {e}")
+            return None, "download_failed"
+        except Exception as e:
+            logger.error(f"Unexpected error downloading {url}: {e}")
+            return None, "download_failed"
     
     def download_video(self, url: str) -> tuple[str | None, str]:
         """

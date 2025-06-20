@@ -37,6 +37,19 @@ MESSAGES = {
     "error_file_too_large": "ڤیدیۆکە زۆر گەورەیە، ناتوانرێت بنێردرێت"
 }
 
+# Instagram Proxy Configuration (optional)
+# Format: http://username:password@proxyip:port or http://proxyip:port
+INSTAGRAM_PROXY = os.getenv('INSTAGRAM_PROXY') or None
+
+# Proxy Rotation (if using multiple proxies)
+PROXY_LIST = [
+    # Add your proxy servers here
+    # 'http://proxy1:port',
+    # 'http://proxy2:port'
+]
+
+PROXY_ROTATION_ENABLED = False
+
 # Download settings
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB limit for Telegram
 TEMP_DIR = "/tmp/telegram_bot_downloads"

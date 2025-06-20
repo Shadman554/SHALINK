@@ -5,6 +5,8 @@ with Kurdish language responses.
 """
 
 import os
+import sys
+import tempfile
 import logging
 import time
 from telegram.error import Conflict
@@ -17,6 +19,31 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+def ensure_single_instance():
+    """Prevent multiple bot instances from running."""
+    lockfile = os.path.join(tempfile.gettempdir(), 'mediabot.lock')
+    try:
+        # Windows-specific file locking
+        if os.name == 'nt':
+            import msvcrt
+            fd = os.open(lockfile, os.O_CREAT | os.O_RDWR)
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                return True
+            except IOError:
+                return False
+        else:
+            import fcntl
+            fd = os.open(lockfile, os.O_CREAT | os.O_RDWR)
+            fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+    except (IOError, OSError):
+        return False
+
+if not ensure_single_instance():
+    print("Another bot instance is already running. Exiting.")
+    sys.exit(1)
 
 from bot_handlers import start_command, handle_video_link
 
