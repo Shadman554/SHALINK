@@ -32,66 +32,60 @@ for env_var, out_name in (('IG_COOKIES_B64', 'instagram.txt'), ('FB_COOKIES_B64'
 
 class VideoDownloader:
     def __init__(self):
-        """Initialize the video downloader with yt-dlp options."""
-        # Create temp directory if it doesn't exist
+        """Initialize with persistent session support."""
         os.makedirs(TEMP_DIR, exist_ok=True)
         
-        # ---- Cookies setup for Instagram & Facebook ----
-        self.cookies_instagram: str | None = None
-        self.cookies_facebook: str | None = None
+        # Persistent session file
+        self.session_file = os.path.join(TEMP_DIR, 'instagram_session.json')
         
-        # First try loading from base64 env vars (Railway/container friendly)
-        if os.getenv('IG_COOKIES_FILE'):
-            self.cookies_instagram = os.getenv('IG_COOKIES_FILE')
-            logger.info(f"Using Instagram cookies from env: {self.cookies_instagram}")
-        
-        if os.getenv('FB_COOKIES_FILE'):
-            self.cookies_facebook = os.getenv('FB_COOKIES_FILE')
-            logger.info(f"Using Facebook cookies from env: {self.cookies_facebook}")
-        
-        # Fallback to local files if no env vars
-        if not self.cookies_instagram:
-            ig_path = os.path.join(os.getcwd(), "instagram_cookies.txt")
-            if os.path.exists(ig_path):
-                self.cookies_instagram = ig_path
-                logger.info(f"Using local Instagram cookies file: {ig_path}")
-        
-        if not self.cookies_facebook:
-            fb_path = os.path.join(os.getcwd(), "facebook_cookies.txt")
-            if os.path.exists(fb_path):
-                self.cookies_facebook = fb_path
-                logger.info(f"Using local Facebook cookies file: {fb_path}")
-        
-        # Final fallback - try browser extraction (desktop only)
-        if not self.cookies_instagram:
-            self._setup_instagram_authentication()
+        # Enhanced cookie handling
+        self.cookies_instagram = self._validate_cookies(
+            os.getenv('IG_COOKIES_FILE'), 
+            os.path.join(os.getcwd(), "instagram_cookies.txt")
+        )
         
         self.ydl_opts = {
-            'format': 'best[filesize<50M]/best',
+            'format': 'best',
             'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
-            'noplaylist': True,
-            'no_warnings': True,
-            'extractaudio': False,
             'cookiefile': self.cookies_instagram,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
-                'Referer': 'https://www.instagram.com/'
-            },
             'extractor_args': {
                 'instagram': {
-                    'api_hostname': 'i.instagram.com',
-                    'include_stories': False
+                    'cookiefile': self.cookies_instagram,
+                    'session': self._load_session() or None
                 }
             },
-            'ignoreerrors': False,
-            'retries': 3,
-            'fragment_retries': 3,
-            'socket_timeout': 30
+            'http_headers': {
+                'User-Agent': 'Instagram 219.0.0.12.117 Android',
+                'X-IG-App-ID': '936619743392459'
+            }
         }
+    
+    def _validate_cookies(self, *cookie_paths):
+        """Validate and return first working cookie file."""
+        for path in cookie_paths:
+            if path and os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        if 'sessionid' in f.read():
+                            return path
+                except Exception:
+                    continue
+        return None
+    
+    def _load_session(self):
+        """Load persistent session if exists."""
+        if os.path.exists(self.session_file):
+            try:
+                with open(self.session_file) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+    
+    def _save_session(self, session):
+        """Save session data persistently."""
+        with open(self.session_file, 'w') as f:
+            json.dump(session, f)
     
     def _setup_instagram_authentication(self):
         """Setup Instagram authentication using browser cookie extraction."""
