@@ -1,0 +1,13 @@
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["ffmpeg"]
+
+[workflows]
+
+[deployment]
+run = ["sh", "-c", "pip install python-telegram-bot yt-dlp && python main.py"]
+
+[agent]
+expertMode = true

@@ -1,0 +1,9 @@
+[phases.setup]
+nixPkgs = ['python312', 'pip', 'ffmpeg']
+
+[phases.install]
+dependsOn = ['setup']
+cmds = ['pip3 install -r requirements_railway.txt']
+
+[start]
+cmd = 'python main.py'

@@ -1,0 +1,11 @@
+[project]
+name = "telegram-video-downloader"
+version = "0.1.0"
+description = "Telegram bot for downloading videos from TikTok, Instagram, and Facebook"
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot==20.8",
+    "python-dotenv==1.1.0",
+    "yt-dlp>=2024.3.10",
+    "requests",
+]

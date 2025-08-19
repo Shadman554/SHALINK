@@ -1,0 +1,10 @@
+test_youtube.py
+attached_assets/
+*.txt
+!requirements_railway_new.txt
+uv.lock
+.replit
+nixpacks.toml
+requirements.txt
+requirements_old.txt
+requirements_railway.txt
