@@ -5,6 +5,27 @@ channel = "stable-25_05"
 packages = ["ffmpeg"]
 
 [workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Fixed Bot"
+
+[[workflows.workflow]]
+name = "Fixed Bot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python main.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [deployment]
 run = ["sh", "-c", "pip install python-telegram-bot yt-dlp && python main.py"]
