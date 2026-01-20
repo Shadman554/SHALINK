@@ -60,7 +60,7 @@ class VideoDownloader:
         # Base download options
         self.ydl_opts = {
             'format': 'best',
-            'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.instagram.com/'
@@ -541,7 +541,7 @@ class VideoDownloader:
                 # Enhanced format selection with age-restriction bypass
                 ydl_opts = {
                     'format': '(bestvideo[height<=1080]+bestaudio/best[height<=1080])[filesize<45M]/best[height<=720][filesize<45M]/best[filesize<45M]/best',
-                    'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+                    'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
                     'merge_output_format': 'mp4',
                     'postprocessors': [{
                         'key': 'FFmpegVideoConvertor',
@@ -577,7 +577,7 @@ class VideoDownloader:
                 # Enhanced audio extraction with age-restriction bypass
                 ydl_opts = {
                     'format': 'bestaudio/best',
-                    'outtmpl': os.path.join(TEMP_DIR, '%(title)s.%(ext)s'),
+                   'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
