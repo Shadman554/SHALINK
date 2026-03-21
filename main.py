@@ -92,7 +92,6 @@ def main():
             application.run_polling(
                 allowed_updates=["message", "callback_query"],
                 drop_pending_updates=True,
-                close_loop=False
             )
 
             logger.info("Bot shut down gracefully – exiting main loop")
@@ -108,7 +107,6 @@ def main():
                     application.run_polling(
                         allowed_updates=["message"],
                         drop_pending_updates=True,
-                        close_loop=False
                     )
                     break
                 except Exception as final_error:
