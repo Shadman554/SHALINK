@@ -10,7 +10,7 @@ A Telegram bot that lets users download videos from TikTok, Instagram, Facebook,
 - **Bot framework**: python-telegram-bot 20.8 with job-queue (APScheduler)
 - **Downloader**: yt-dlp 2026.3.17+
 - **Video processing**: ffmpeg (system dependency via Nix)
-- **Database**: SQLite (bot_data.db)
+- **Database**: PostgreSQL via `DATABASE_URL` (Replit built-in)
 
 ## Project Structure
 
@@ -19,7 +19,7 @@ A Telegram bot that lets users download videos from TikTok, Instagram, Facebook,
 | `main.py` | Entry point — registers all handlers, starts scheduler |
 | `bot_handlers.py` | All Telegram command and callback handlers |
 | `video_downloader.py` | Download logic, audio extraction, YouTube auto-retry |
-| `database.py` | SQLite: users, history, bans, stats |
+| `database.py` | PostgreSQL: users, history, bans, stats |
 | `config.py` | Token, Kurdish messages, platform list |
 | `requirements.txt` | Python dependencies |
 
@@ -34,9 +34,6 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 - **YouTube quality** — 360p / 720p / 1080p + MP3
 - **Batch downloads** — send multiple links at once; bot downloads all as video
 - **Live progress** — shows "⬇️ دادەبەزێت... 45%" during download
-- **Download history** — `/history` shows last 10 downloaded links
-- **User stats** — `/stats` shows personal count + global totals
-- **Inline mode** — type `@yourbot <url>` in any chat (requires BotFather `/setinline`)
 
 ### For Admins
 - **Daily report** — automatic message at 09:00 UTC with daily downloads + new users + top users
@@ -46,7 +43,6 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 
 ### Quality of life
 - **Auto-retry lower quality** — if 1080p is too large, auto-retries 720p then 360p
-- **Link preview suppression** — processing messages never show ugly link previews
 - **Large video compression** — auto-compresses with ffmpeg before sending
 
 ## Commands
@@ -54,8 +50,6 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 | Command | Who | Description |
 |---------|-----|-------------|
 | `/start` | Everyone | Welcome message |
-| `/stats` | Everyone | Personal + global download counts |
-| `/history` | Everyone | Last 10 downloaded URLs |
 | `/broadcast <msg>` | Admin | Send message to all users |
 | `/user <id>` | Admin | Look up a user's stats and ban status |
 | `/ban <id>` | Admin | Ban a user |
@@ -67,12 +61,11 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 |----------|----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Yes | Bot token from @BotFather |
 | `ADMIN_USER_ID` | Yes | Your Telegram user ID for admin commands |
+| `DATABASE_URL` | Yes | PostgreSQL connection string (auto-set by Replit) |
 | `IG_COOKIES_B64` | Optional | Base64-encoded Instagram cookies |
 | `FB_COOKIES_B64` | Optional | Base64-encoded Facebook cookies |
 
-## Enabling Inline Mode
+## Important Notes
 
-To allow `@yourbot <url>` in any chat:
-1. Open @BotFather → `/setinline` → select your bot
-2. Set a placeholder text (e.g. "paste a video link…")
-3. Done — inline mode is now active
+- Only **one** bot instance can poll Telegram at a time. If you run this on Replit, stop any other deployments (Railway, etc.) using the same token, or they will conflict.
+- `runtime.txt` uses `python-3.11` (no patch version) to ensure Railway can find a precompiled binary.

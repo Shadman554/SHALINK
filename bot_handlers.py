@@ -122,6 +122,8 @@ async def _send_audio_file(context, chat_id, file_path, caption):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        user = update.effective_user
+        record_download(user.id, user.username or '', user.first_name or '')
         await update.message.reply_text(
             MESSAGES["start"], disable_web_page_preview=True
         )
@@ -173,10 +175,11 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if admin_id == 0 or user_id != admin_id:
             await update.message.reply_text(MESSAGES["broadcast_no_access"])
             return
-        if not context.args:
+        raw = update.message.text or ""
+        message_text = raw.split(None, 1)[1].strip() if " " in raw or "\n" in raw else ""
+        if not message_text:
             await update.message.reply_text(MESSAGES["broadcast_usage"])
             return
-        message_text = " ".join(context.args)
         user_ids = get_all_user_ids()
         sent = 0
         for uid in user_ids:
