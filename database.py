@@ -1,67 +1,76 @@
 """
-SQLite database for tracking user download stats, history, bans, and admin broadcast.
+PostgreSQL database for tracking user downloads, bans, and admin broadcast.
+Uses DATABASE_URL environment variable (automatically set by Railway).
 """
 
-import sqlite3
 import os
 import logging
 from datetime import datetime, timedelta
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot_data.db')
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+
+def _connect():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set.")
+    return psycopg2.connect(DATABASE_URL)
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id        INTEGER PRIMARY KEY,
+            user_id        BIGINT PRIMARY KEY,
             username       TEXT,
             first_name     TEXT,
             download_count INTEGER DEFAULT 0,
-            first_used     TEXT DEFAULT (datetime('now')),
-            last_used      TEXT DEFAULT (datetime('now'))
+            first_used     TIMESTAMP DEFAULT NOW(),
+            last_used      TIMESTAMP DEFAULT NOW()
         )
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS download_history (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id       INTEGER NOT NULL,
+            id            SERIAL PRIMARY KEY,
+            user_id       BIGINT NOT NULL,
             url           TEXT NOT NULL,
             platform      TEXT,
-            downloaded_at TEXT DEFAULT (datetime('now'))
+            downloaded_at TIMESTAMP DEFAULT NOW()
         )
     ''')
     c.execute('''
         CREATE TABLE IF NOT EXISTS banned_users (
-            user_id   INTEGER PRIMARY KEY,
-            banned_at TEXT DEFAULT (datetime('now'))
+            user_id   BIGINT PRIMARY KEY,
+            banned_at TIMESTAMP DEFAULT NOW()
         )
     ''')
     conn.commit()
     conn.close()
-    logger.info("Database initialised at %s", DB_PATH)
+    logger.info("PostgreSQL database initialised.")
 
 
 def record_download(user_id: int, username: str, first_name: str, url: str = '', platform: str = ''):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
         c.execute('''
             INSERT INTO users (user_id, username, first_name, download_count)
-            VALUES (?, ?, ?, 1)
-            ON CONFLICT(user_id) DO UPDATE SET
-                download_count = download_count + 1,
-                last_used      = datetime('now'),
-                username       = excluded.username,
-                first_name     = excluded.first_name
+            VALUES (%s, %s, %s, 1)
+            ON CONFLICT (user_id) DO UPDATE SET
+                download_count = users.download_count + 1,
+                last_used      = NOW(),
+                username       = EXCLUDED.username,
+                first_name     = EXCLUDED.first_name
         ''', (user_id, username or '', first_name or ''))
         if url:
             c.execute('''
                 INSERT INTO download_history (user_id, url, platform)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
             ''', (user_id, url, platform or ''))
         conn.commit()
         conn.close()
@@ -71,9 +80,9 @@ def record_download(user_id: int, username: str, first_name: str, url: str = '',
 
 def get_user_stats(user_id: int):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
-        c.execute('SELECT download_count, first_used FROM users WHERE user_id = ?', (user_id,))
+        c.execute('SELECT download_count, first_used FROM users WHERE user_id = %s', (user_id,))
         row = c.fetchone()
         conn.close()
         return row
@@ -84,7 +93,7 @@ def get_user_stats(user_id: int):
 
 def get_global_stats():
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
         c.execute('SELECT COUNT(*), COALESCE(SUM(download_count), 0) FROM users')
         row = c.fetchone()
@@ -97,7 +106,7 @@ def get_global_stats():
 
 def get_all_user_ids():
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
         c.execute('SELECT user_id FROM users')
         rows = [r[0] for r in c.fetchall()]
@@ -108,12 +117,28 @@ def get_all_user_ids():
         return []
 
 
-def get_download_history(user_id: int, limit: int = 10):
+def get_all_users():
+    """Returns all users sorted by download count descending."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
         c.execute(
-            'SELECT url, platform, downloaded_at FROM download_history WHERE user_id = ? ORDER BY downloaded_at DESC LIMIT ?',
+            'SELECT user_id, first_name, username, download_count, last_used FROM users ORDER BY download_count DESC'
+        )
+        rows = c.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.error("DB get_all_users error: %s", e)
+        return []
+
+
+def get_download_history(user_id: int, limit: int = 10):
+    try:
+        conn = _connect()
+        c = conn.cursor()
+        c.execute(
+            'SELECT url, platform, downloaded_at FROM download_history WHERE user_id = %s ORDER BY downloaded_at DESC LIMIT %s',
             (user_id, limit)
         )
         rows = c.fetchall()
@@ -126,9 +151,9 @@ def get_download_history(user_id: int, limit: int = 10):
 
 def ban_user(user_id: int) -> bool:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
-        c.execute('INSERT OR IGNORE INTO banned_users (user_id) VALUES (?)', (user_id,))
+        c.execute('INSERT INTO banned_users (user_id) VALUES (%s) ON CONFLICT DO NOTHING', (user_id,))
         affected = c.rowcount
         conn.commit()
         conn.close()
@@ -140,9 +165,9 @@ def ban_user(user_id: int) -> bool:
 
 def unban_user(user_id: int) -> bool:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
-        c.execute('DELETE FROM banned_users WHERE user_id = ?', (user_id,))
+        c.execute('DELETE FROM banned_users WHERE user_id = %s', (user_id,))
         affected = c.rowcount
         conn.commit()
         conn.close()
@@ -154,9 +179,9 @@ def unban_user(user_id: int) -> bool:
 
 def is_banned(user_id: int) -> bool:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
-        c.execute('SELECT 1 FROM banned_users WHERE user_id = ?', (user_id,))
+        c.execute('SELECT 1 FROM banned_users WHERE user_id = %s', (user_id,))
         row = c.fetchone()
         conn.close()
         return row is not None
@@ -167,10 +192,10 @@ def is_banned(user_id: int) -> bool:
 
 def get_user_info(user_id: int):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
         c.execute(
-            'SELECT user_id, username, first_name, download_count, first_used, last_used FROM users WHERE user_id = ?',
+            'SELECT user_id, username, first_name, download_count, first_used, last_used FROM users WHERE user_id = %s',
             (user_id,)
         )
         row = c.fetchone()
@@ -184,12 +209,12 @@ def get_user_info(user_id: int):
 def get_daily_stats():
     """Returns (downloads_last_24h, new_users_last_24h, top_3_users)."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = _connect()
         c = conn.cursor()
-        since = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
-        c.execute('SELECT COUNT(*) FROM download_history WHERE downloaded_at >= ?', (since,))
+        since = datetime.utcnow() - timedelta(days=1)
+        c.execute('SELECT COUNT(*) FROM download_history WHERE downloaded_at >= %s', (since,))
         downloads = c.fetchone()[0]
-        c.execute('SELECT COUNT(*) FROM users WHERE first_used >= ?', (since,))
+        c.execute('SELECT COUNT(*) FROM users WHERE first_used >= %s', (since,))
         new_users = c.fetchone()[0]
         c.execute('SELECT first_name, username, download_count FROM users ORDER BY download_count DESC LIMIT 3')
         top_users = c.fetchall()

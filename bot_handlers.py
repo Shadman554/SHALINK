@@ -11,15 +11,15 @@ from urllib.parse import urlparse
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    InlineQueryResultArticle, InputTextMessageContent
 )
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
 from video_downloader import VideoDownloader
 from database import (
-    record_download, get_user_stats, get_global_stats, get_all_user_ids,
-    get_download_history, ban_user, unban_user, is_banned, get_user_info,
+    record_download, get_all_user_ids, get_all_users,
+    get_global_stats,
+    ban_user, unban_user, is_banned, get_user_info,
     get_daily_stats, init_db
 )
 from config import MESSAGES, ADMIN_USER_ID, SUPPORTED_PLATFORMS
@@ -129,42 +129,40 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in start_command: {e}")
 
 
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        if await _check_banned(update):
+        if not _is_admin(update.effective_user.id):
+            await update.message.reply_text(MESSAGES["broadcast_no_access"])
             return
-        user_id = update.effective_user.id
-        row = get_user_stats(user_id)
-        global_row = get_global_stats()
-        if not row:
-            await update.message.reply_text(MESSAGES["stats_none"])
-            return
-        download_count, first_used = row
-        total_users, total_downloads = global_row
-        text = MESSAGES["stats_user"].format(download_count, first_used[:10])
-        text += MESSAGES["stats_global"].format(total_users, total_downloads)
-        await update.message.reply_text(text)
-    except Exception as e:
-        logger.error(f"Error in stats_command: {e}")
 
+        total_users, total_downloads = get_global_stats()
+        all_users = get_all_users()
 
-async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if await _check_banned(update):
-            return
-        user_id = update.effective_user.id
-        rows = get_download_history(user_id, limit=10)
-        if not rows:
-            await update.message.reply_text(MESSAGES["history_empty"])
-            return
-        text = MESSAGES["history_header"]
-        for i, (url, platform, downloaded_at) in enumerate(rows, 1):
-            date = downloaded_at[:10] if downloaded_at else ''
-            platform_label = platform or 'Video'
-            text += f"{i}. {platform_label} ({date})\n{url}\n\n"
-        await update.message.reply_text(text, disable_web_page_preview=True)
+        text = (
+            "📊 ئامارەکانی بۆت:\n\n"
+            f"👥 کۆی بەکارهێنەران: {total_users}\n"
+            f"⬇️ کۆی دابەزاندنەکان: {total_downloads}\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 لیستی بەکارهێنەران:\n\n"
+        )
+
+        if not all_users:
+            text += "هیچ بەکارهێنەرێک نییە."
+        else:
+            for uid, first_name, username, dl_count, last_used in all_users:
+                name = first_name or '-'
+                uname = f"@{username}" if username else '-'
+                date = str(last_used)[:10] if last_used else '-'
+                text += f"• {name} ({uname})\n  ID: {uid} | دابەزاندن: {dl_count} | دوایین: {date}\n\n"
+
+        if len(text) > 4000:
+            for i in range(0, len(text), 4000):
+                await update.message.reply_text(text[i:i+4000])
+        else:
+            await update.message.reply_text(text)
+
     except Exception as e:
-        logger.error(f"Error in history_command: {e}")
+        logger.error(f"Error in admin_command: {e}")
 
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -614,37 +612,3 @@ async def handle_youtube_callback(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_text(MESSAGES["error_download_failed"])
         except Exception:
             pass
-
-
-# ---------------------------------------------------------------------------
-# Inline mode
-# ---------------------------------------------------------------------------
-
-async def handle_inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        query_text = (update.inline_query.query or '').strip()
-        urls = _extract_urls(query_text)
-        supported = [u for u in urls if _is_supported(u)]
-
-        if not supported:
-            await update.inline_query.answer([], cache_time=5)
-            return
-
-        results = []
-        for i, url in enumerate(supported[:5]):
-            platform = _detect_platform(url)
-            results.append(
-                InlineQueryResultArticle(
-                    id=str(i),
-                    title=f"{MESSAGES['inline_title']} — {platform}",
-                    description=url[:80],
-                    input_message_content=InputTextMessageContent(
-                        message_text=url,
-                        disable_web_page_preview=True
-                    )
-                )
-            )
-
-        await update.inline_query.answer(results, cache_time=10)
-    except Exception as e:
-        logger.error(f"Error in handle_inline_query: {e}")

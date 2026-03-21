@@ -13,7 +13,7 @@ import time
 from telegram.error import Conflict
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, InlineQueryHandler, filters
+    CallbackQueryHandler, filters
 )
 from config import BOT_TOKEN
 
@@ -39,9 +39,9 @@ force_cleanup_bot_instance()
 from bot_handlers import (
     start_command, handle_video_link,
     handle_youtube_callback, handle_download_callback,
-    stats_command, broadcast_command, history_command,
+    admin_command, broadcast_command,
     user_command, ban_command, unban_command,
-    handle_inline_query, send_daily_report
+    send_daily_report
 )
 
 
@@ -58,10 +58,9 @@ def main():
 
             # User commands
             application.add_handler(CommandHandler("start", start_command))
-            application.add_handler(CommandHandler("stats", stats_command))
-            application.add_handler(CommandHandler("history", history_command))
 
             # Admin commands
+            application.add_handler(CommandHandler("admin", admin_command))
             application.add_handler(CommandHandler("broadcast", broadcast_command))
             application.add_handler(CommandHandler("user", user_command))
             application.add_handler(CommandHandler("ban", ban_command))
@@ -78,9 +77,6 @@ def main():
                 handle_download_callback, pattern=r"^dl_(video|audio)_"
             ))
 
-            # Inline mode
-            application.add_handler(InlineQueryHandler(handle_inline_query))
-
             # Daily report job at 09:00 UTC
             if application.job_queue:
                 application.job_queue.run_daily(
@@ -94,7 +90,7 @@ def main():
 
             logger.info("Bot starting… (polling mode)")
             application.run_polling(
-                allowed_updates=["message", "callback_query", "inline_query"],
+                allowed_updates=["message", "callback_query"],
                 drop_pending_updates=True,
                 close_loop=False
             )
