@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Telegram Bot for downloading videos from TikTok, Instagram, Facebook, YouTube,
+Twitter/X, and Pinterest — with Kurdish language responses.
+"""
+
+import os
+import sys
+import datetime
+import tempfile
+import logging
+import time
+from telegram.error import Conflict
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, filters
+)
+from config import BOT_TOKEN
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+
+def force_cleanup_bot_instance():
+    lockfile = os.path.join(tempfile.gettempdir(), 'mediabot.lock')
+    try:
+        if os.path.exists(lockfile):
+            os.remove(lockfile)
+            logger.info("Removed existing bot lock file")
+    except Exception as e:
+        logger.warning(f"Could not remove lock file: {e}")
+
+
+force_cleanup_bot_instance()
+
+from bot_handlers import (
+    start_command, handle_video_link,
+    handle_youtube_callback, handle_download_callback,
+    admin_command, broadcast_command,
+    user_command, ban_command, unban_command,
+    send_daily_report
+)
+
+
+def main():
+    attempt = 0
+    max_attempts = 3
+
+    while attempt < max_attempts:
+        try:
+            attempt += 1
+            logger.info(f"Bot startup attempt {attempt}/{max_attempts}")
+
+            application = Application.builder().token(BOT_TOKEN).build()
+
+            # User commands
+            application.add_handler(CommandHandler("start", start_command))
+
+            # Admin commands
+            application.add_handler(CommandHandler("admin", admin_command))
+            application.add_handler(CommandHandler("broadcast", broadcast_command))
+            application.add_handler(CommandHandler("user", user_command))
+            application.add_handler(CommandHandler("ban", ban_command))
+            application.add_handler(CommandHandler("unban", unban_command))
+
+            # Message handler
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_link))
+
+            # Callback handlers
+            application.add_handler(CallbackQueryHandler(
+                handle_youtube_callback, pattern=r"^yt_(video_(360|720|1080)|audio)_"
+            ))
+            application.add_handler(CallbackQueryHandler(
+                handle_download_callback, pattern=r"^dl_(video|audio)_"
+            ))
+
+            # Daily report job at 09:00 UTC
+            if application.job_queue:
+                application.job_queue.run_daily(
+                    send_daily_report,
+                    time=datetime.time(9, 0, 0, tzinfo=datetime.timezone.utc),
+                    name="daily_report"
+                )
+                logger.info("Daily report job scheduled at 09:00 UTC")
+            else:
+                logger.warning("JobQueue not available — daily report disabled. Install APScheduler.")
+
+            logger.info("Bot starting… (polling mode)")
+            application.run_polling(
+                allowed_updates=["message", "callback_query"],
+                drop_pending_updates=True,
+                close_loop=False
+            )
+
+            logger.info("Bot shut down gracefully – exiting main loop")
+            break
+
+        except Conflict as e:
+            logger.warning("Conflict detected. Attempting immediate takeover (attempt %d/%d)", attempt, max_attempts)
+            if attempt >= max_attempts:
+                logger.error("Max attempts reached. Bot will force-start anyway.")
+                try:
+                    application = Application.builder().token(BOT_TOKEN).build()
+                    logger.info("Final attempt - Bot starting with force override")
+                    application.run_polling(
+                        allowed_updates=["message"],
+                        drop_pending_updates=True,
+                        close_loop=False
+                    )
+                    break
+                except Exception as final_error:
+                    logger.error(f"Final attempt failed: {final_error}")
+                    break
+            time.sleep(0.5)
+            continue
+        except Exception as e:
+            logger.error("Unhandled error in polling loop: %s. Retrying in 10 seconds…", e)
+            time.sleep(10)
+            continue
+
+
+if __name__ == '__main__':
+    if not BOT_TOKEN:
+        print("Error: TELEGRAM_BOT_TOKEN environment variable is not set.")
+        print("Please set your Telegram Bot Token before running the bot.")
+        sys.exit(1)
+    main()
