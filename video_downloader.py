@@ -400,7 +400,7 @@ class VideoDownloader:
             logger.error(f"Unexpected error downloading {url}: {e}")
             return None, "download_failed"
     
-    def download_video(self, url: str) -> tuple[str | None, str]:
+    def download_video(self, url: str, progress_hook=None) -> tuple[str | None, str]:
         """
         Download video from the given URL.
         
@@ -427,6 +427,9 @@ class VideoDownloader:
             
             if any(site in url for site in ("facebook.com", "fb.com")) and self.cookies_facebook:
                 ydl_opts["cookiefile"] = self.cookies_facebook
+
+            if progress_hook:
+                ydl_opts['progress_hooks'] = [progress_hook]
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Extract info first to get title and check file size
@@ -522,124 +525,82 @@ class VideoDownloader:
             logger.error(f"Error finding downloaded file: {e}")
             return None
     
-    def download_youtube(self, url: str, format_type: str) -> tuple[str | None, str]:
+    def download_youtube(self, url: str, format_type: str, quality: str = '1080', progress_hook=None) -> tuple[str | None, str]:
         """
         Download YouTube video or audio with specific quality options.
         
         Args:
             url (str): YouTube URL
-            format_type (str): 'video' for 1080p video, 'audio' for MP3
+            format_type (str): 'video' or 'audio'
+            quality (str): '360', '720', or '1080' (only relevant for video)
+            progress_hook: optional yt-dlp progress hook callable
             
         Returns:
             tuple[str, str]: (file_path, result_message)
         """
         try:
-            logger.info(f"Starting YouTube {format_type} download for URL: {url}")
-            
-            # Configure options based on format type
+            logger.info(f"Starting YouTube {format_type} ({quality}p) download for URL: {url}")
+
+            # Build height cap from quality
+            height = quality if quality else '1080'
+
+            # Common base options shared by all attempts
+            base_opts = {
+                'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
+                'prefer_ffmpeg': True,
+                'writeinfojson': False,
+                'writethumbnail': False,
+                'extractor_retries': 3,
+                'fragment_retries': 3,
+                'age_limit': 99,
+                'geo_bypass': True,
+                'geo_bypass_country': 'US',
+            }
+
+            if progress_hook:
+                base_opts['progress_hooks'] = [progress_hook]
+
             if format_type == 'video':
-                # Enhanced format selection with age-restriction bypass
                 ydl_opts = {
-                    'format': '(bestvideo[height<=1080]+bestaudio/best[height<=1080])[filesize<45M]/best[height<=720][filesize<45M]/best[filesize<45M]/best',
-                    'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
+                    **base_opts,
+                    'format': (
+                        f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]'
+                        f'/bestvideo[height<={height}]+bestaudio'
+                        f'/best[height<={height}]/best'
+                    ),
                     'merge_output_format': 'mp4',
-                    'postprocessors': [{
-                        'key': 'FFmpegVideoConvertor',
-                        'preferedformat': 'mp4'
-                    }],
-                    'prefer_ffmpeg': True,
-                    'writeinfojson': False,
-                    'writethumbnail': False,
-                    'extractor_retries': 5,
-                    'fragment_retries': 5,
-                    'retry_sleep_functions': {'http': lambda n: min(4 ** n, 100)},
-                    'age_limit': 99,  # Bypass age restrictions
-                    'geo_bypass': True,  # Bypass geo-restrictions
-                    'geo_bypass_country': 'US',  # Use US geo-bypass
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-us,en;q=0.5',
-                        'Accept-Encoding': 'gzip,deflate',
-                        'DNT': '1',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1'
-                    },
-                    'extractor_args': {
-                        'youtube': {
-                            'skip': ['dash', 'hls'],
-                            'player_client': ['android', 'web'],
-                            'player_skip': ['configs']
-                        }
-                    }
+                    'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
                 }
-            else:  # audio format
-                # Enhanced audio extraction with age-restriction bypass
+            else:
                 ydl_opts = {
+                    **base_opts,
                     'format': 'bestaudio/best',
-                   'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
                         'preferredquality': '192',
                     }],
-                    'writeinfojson': False,
-                    'writethumbnail': False,
-                    'prefer_ffmpeg': True,
-                    'extractor_retries': 5,
-                    'fragment_retries': 5,
-                    'retry_sleep_functions': {'http': lambda n: min(4 ** n, 100)},
-                    'age_limit': 99,  # Bypass age restrictions
-                    'geo_bypass': True,  # Bypass geo-restrictions
-                    'geo_bypass_country': 'US',  # Use US geo-bypass
-                    'ignoreerrors': False,
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-us,en;q=0.5',
-                        'Accept-Encoding': 'gzip,deflate',
-                        'DNT': '1',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1'
-                    },
-                    'extractor_args': {
-                        'youtube': {
-                            'skip': ['dash', 'hls'],
-                            'player_client': ['android', 'web'],
-                            'player_skip': ['configs']
-                        }
-                    }
                 }
-            
-            # Try multiple approaches for age-restricted content
+
+            # Attempt configs: progressively more permissive
+            # Let yt-dlp choose the client (defaults to android_vr which works without PO tokens)
+            attempt_configs = [
+                # Attempt 1: yt-dlp default client — works for most videos
+                {},
+                # Attempt 2: explicitly android_vr
+                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                # Attempt 3: simplified format as last resort
+                {
+                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
+                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                },
+            ]
+
             for attempt in range(1, 4):
                 try:
                     logger.info(f"YouTube download attempt {attempt}/3")
-                    
-                    # Modify options for each attempt
-                    current_opts = ydl_opts.copy()
-                    
-                    if attempt == 2:
-                        # Second attempt: Use different player client
-                        current_opts['extractor_args'] = {
-                            'youtube': {
-                                'player_client': ['android_music', 'android'],
-                                'player_skip': ['webpage', 'configs']
-                            }
-                        }
-                    elif attempt == 3:
-                        # Third attempt: Use iOS client and different format
-                        current_opts['extractor_args'] = {
-                            'youtube': {
-                                'player_client': ['ios', 'android_creator'],
-                                'player_skip': ['webpage', 'configs', 'js']
-                            }
-                        }
-                        # More flexible format selection for difficult videos
-                        if format_type == 'video':
-                            current_opts['format'] = 'best[height<=720]/best[height<=480]/best'
-                        else:
-                            current_opts['format'] = 'bestaudio/worst'
+
+                    current_opts = {**ydl_opts, **attempt_configs[attempt - 1]}
                     
                     with yt_dlp.YoutubeDL(current_opts) as ydl:
                         # Get video info first
@@ -742,6 +703,54 @@ class VideoDownloader:
         except Exception as e:
             logger.error(f"Error cleaning up file {file_path}: {e}")
     
+    def extract_audio_from_download(self, file_path: str) -> tuple[str | None, str]:
+        """Extract MP3 audio from an already-downloaded video file using ffmpeg."""
+        try:
+            base = os.path.splitext(file_path)[0]
+            out = base + '_audio.mp3'
+            cmd = ['ffmpeg', '-i', file_path, '-q:a', '2', '-map', 'a', '-y', out]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0 and os.path.exists(out):
+                return out, 'success'
+            logger.error(f"ffmpeg audio extract failed: {result.stderr}")
+            return None, 'audio_extract_failed'
+        except Exception as e:
+            logger.error(f"Audio extraction error: {e}")
+            return None, 'audio_extract_failed'
+
+    def download_audio(self, url: str, progress_hook=None) -> tuple[str | None, str]:
+        """Download audio from any non-YouTube URL by downloading video then extracting MP3."""
+        file_path, result = self.download_video(url, progress_hook)
+        if not file_path:
+            return None, result
+        audio_path, audio_result = self.extract_audio_from_download(file_path)
+        self.cleanup_file(file_path)
+        return audio_path, audio_result
+
+    def download_youtube_with_fallback(self, url: str, format_type: str, quality: str = '1080', progress_hook=None) -> tuple[str | None, str, str]:
+        """Download YouTube video with automatic quality downgrade if file is too large.
+
+        Returns (file_path, result, quality_used).
+        """
+        if format_type == 'audio':
+            file_path, result = self.download_youtube(url, 'audio', None, progress_hook)
+            return file_path, result, 'audio'
+
+        quality_chain = ['1080', '720', '360']
+        start = quality_chain.index(quality) if quality in quality_chain else 0
+        qualities = quality_chain[start:]
+
+        last_result = 'download_failed'
+        for q in qualities:
+            file_path, result = self.download_youtube(url, 'video', q, progress_hook)
+            if file_path:
+                return file_path, result, q
+            last_result = result
+            if result != 'file_too_large':
+                break
+
+        return None, last_result, qualities[-1]
+
     def compress_video(self, input_path, target_size_mb=45):
         """Compress video to fit within Telegram's file size limit."""
         try:

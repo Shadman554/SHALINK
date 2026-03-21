@@ -2,123 +2,77 @@
 
 ## Overview
 
-This is a Telegram bot application that allows users to download videos from popular social media platforms including TikTok, Instagram, and Facebook. The bot responds in Kurdish language and provides a simple interface for users to share video links and receive downloaded content.
+A Telegram bot that lets users download videos from TikTok, Instagram, Facebook, YouTube, Twitter/X, and Pinterest. All responses are in Kurdish.
 
-## System Architecture
+## Architecture
 
-### Backend Architecture
-- **Language**: Python 3.11
-- **Framework**: python-telegram-bot library for Telegram Bot API integration
-- **Video Processing**: yt-dlp library for downloading videos from various platforms
-- **Deployment**: Replit-based hosting with automated dependency installation
+- **Runtime**: Python 3.12 on Replit
+- **Bot framework**: python-telegram-bot 20.8 with job-queue (APScheduler)
+- **Downloader**: yt-dlp 2026.3.17+
+- **Video processing**: ffmpeg (system dependency via Nix)
+- **Database**: SQLite (bot_data.db)
 
-### Key Design Decisions
-- **Modular Structure**: Separated concerns into distinct modules (handlers, downloader, config)
-- **Asynchronous Processing**: Uses async/await pattern for non-blocking Telegram message handling
-- **Error Handling**: Comprehensive error handling with user-friendly Kurdish messages
-- **File Size Limitation**: 50MB limit to comply with Telegram's file size restrictions
+## Project Structure
 
-## Key Components
+| File | Purpose |
+|------|---------|
+| `main.py` | Entry point — registers all handlers, starts scheduler |
+| `bot_handlers.py` | All Telegram command and callback handlers |
+| `video_downloader.py` | Download logic, audio extraction, YouTube auto-retry |
+| `database.py` | SQLite: users, history, bans, stats |
+| `config.py` | Token, Kurdish messages, platform list |
+| `requirements.txt` | Python dependencies |
 
-### 1. Main Application (`main.py`)
-- Entry point for the application
-- Sets up Telegram bot with proper handlers
-- Configures logging for monitoring and debugging
+## Supported Platforms
 
-### 2. Bot Handlers (`bot_handlers.py`)
-- `/start` command handler for user onboarding
-- Message handler for processing video links
-- Input validation and user feedback management
+TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 
-### 3. Video Downloader (`video_downloader.py`)
-- Core downloading functionality using yt-dlp
-- Platform validation for supported services
-- File management and temporary storage handling
+## Features
 
-### 4. Configuration (`config.py`)
-- Centralized configuration management
-- Kurdish language message templates
-- Platform support definitions and file size limits
+### For Users
+- **Format picker** — every URL shows Video / MP3 Audio buttons (all platforms)
+- **YouTube quality** — 360p / 720p / 1080p + MP3
+- **Batch downloads** — send multiple links at once; bot downloads all as video
+- **Live progress** — shows "⬇️ دادەبەزێت... 45%" during download
+- **Download history** — `/history` shows last 10 downloaded links
+- **User stats** — `/stats` shows personal count + global totals
+- **Inline mode** — type `@yourbot <url>` in any chat (requires BotFather `/setinline`)
 
-## Data Flow
+### For Admins
+- **Daily report** — automatic message at 09:00 UTC with daily downloads + new users + top users
+- **Broadcast** — `/broadcast <message>` to all users
+- **User lookup** — `/user <id>` shows info and ban status
+- **Ban / unban** — `/ban <id>` and `/unban <id>`
 
-1. **User Input**: User sends a video link via Telegram
-2. **Validation**: Bot validates URL format and platform support
-3. **Processing**: Video downloader processes the link using yt-dlp
-4. **Download**: Video is downloaded to temporary storage
-5. **Delivery**: Video file is sent back to user via Telegram
-6. **Cleanup**: Temporary files are managed to prevent storage issues
+### Quality of life
+- **Auto-retry lower quality** — if 1080p is too large, auto-retries 720p then 360p
+- **Link preview suppression** — processing messages never show ugly link previews
+- **Large video compression** — auto-compresses with ffmpeg before sending
 
-## External Dependencies
+## Commands
 
-### Core Libraries
-- **python-telegram-bot**: Telegram Bot API wrapper for Python
-- **yt-dlp**: Video downloading library supporting multiple platforms
-- **Standard Library**: logging, os, tempfile, urllib for utility functions
+| Command | Who | Description |
+|---------|-----|-------------|
+| `/start` | Everyone | Welcome message |
+| `/stats` | Everyone | Personal + global download counts |
+| `/history` | Everyone | Last 10 downloaded URLs |
+| `/broadcast <msg>` | Admin | Send message to all users |
+| `/user <id>` | Admin | Look up a user's stats and ban status |
+| `/ban <id>` | Admin | Ban a user |
+| `/unban <id>` | Admin | Unban a user |
 
-### Supported Platforms
-- TikTok (tiktok.com, vm.tiktok.com, vt.tiktok.com)
-- Instagram (instagram.com, instagram.com/reel, instagram.com/p/)
-- Facebook (facebook.com, fb.com)
-- YouTube (youtube.com, youtu.be, m.youtube.com) - with MP3/1080p options
+## Environment Variables
 
-## Deployment Strategy
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Yes | Bot token from @BotFather |
+| `ADMIN_USER_ID` | Yes | Your Telegram user ID for admin commands |
+| `IG_COOKIES_B64` | Optional | Base64-encoded Instagram cookies |
+| `FB_COOKIES_B64` | Optional | Base64-encoded Facebook cookies |
 
-### Environment
-- **Platform**: Replit with Python 3.11 runtime
-- **Package Management**: UV lock file for dependency versioning
-- **Auto-deployment**: Configured through .replit workflow automation
+## Enabling Inline Mode
 
-### Configuration
-- Bot token management via environment variables with fallback
-- Temporary file storage in `/tmp/telegram_bot_downloads`
-- Parallel workflow execution for improved performance
-
-### Scalability Considerations
-- File size limitations prevent memory overflow
-- Temporary storage cleanup to manage disk space
-- Logging for monitoring bot performance and errors
-
-## User Preferences
-
-Preferred communication style: Simple, everyday language.
-
-## Recent Changes
-
-✓ August 19, 2025: Successfully completed migration from Replit Agent to Replit environment
-✓ August 19, 2025: Resolved critical package conflicts between python-telegram-bot and conflicting telegram packages
-✓ August 19, 2025: Bot now running successfully with proper Telegram API integration and token authentication
-✓ August 19, 2025: All dependencies properly installed and verified working
-✓ August 19, 2025: Bot successfully tested and working on both Replit and Railway deployments
-✓ August 19, 2025: Enhanced YouTube downloader with age-restriction and geo-restriction bypass capabilities
-✓ August 19, 2025: Implemented multi-attempt download strategy with different player clients for difficult videos
-✓ August 19, 2025: Added comprehensive error handling and fallback mechanisms for YouTube downloads
-✓ August 19, 2025: Added YouTube support with MP3 and 1080p video download options
-✓ August 19, 2025: Implemented inline keyboard interface for YouTube format selection
-✓ August 19, 2025: Enhanced bot with callback handlers for user interaction
-✓ August 19, 2025: Improved MP3 audio extraction quality and file detection
-✓ August 19, 2025: Enhanced 1080p video quality selection with better format handling
-✓ August 19, 2025: Installed ffmpeg system dependency to resolve YouTube download errors requiring format merging
-✓ August 19, 2025: Fixed video quality selection to ensure true 1080p downloads instead of low quality
-✓ August 19, 2025: Resolved file size limit error by adding size constraints to video format selection
-✓ August 19, 2025: Added Railway deployment configuration files for production hosting
-✓ August 19, 2025: Fixed YouTube format compatibility issues for Railway hosting by implementing flexible format selection
-✓ August 19, 2025: FIXED YOUTUBE DOWNLOADS - Verified working on Replit with both MP3 and video downloads
-✓ August 19, 2025: Updated Railway deployment configuration with latest yt-dlp and deployment verification
-✓ August 19, 2025: Added Railway deployment test script to ensure all components work correctly
-✓ August 19, 2025: FIXED YOUTUBE DOWNLOADS - Verified working on Replit with both MP3 and video downloads
-✓ August 19, 2025: Updated Railway deployment configuration with latest yt-dlp and deployment verification
-✓ August 19, 2025: Added Railway deployment test script to ensure all components work correctly
-✓ June 20, 2025: Bot is now running and responding to commands in Kurdish language
-✓ June 20, 2025: Video downloading functionality tested and working for TikTok, Instagram, Facebook
-
-## User Preferences
-
-- Bot responses in Kurdish language as specified
-- Fast performance with minimal delays
-- Clean error handling without technical details exposed to users
-
-## Changelog
-
-Changelog:
-- June 20, 2025. Initial setup and successful deployment
+To allow `@yourbot <url>` in any chat:
+1. Open @BotFather → `/setinline` → select your bot
+2. Set a placeholder text (e.g. "paste a video link…")
+3. Done — inline mode is now active
