@@ -19,7 +19,7 @@ from video_downloader import VideoDownloader
 from database import (
     record_download, get_all_user_ids, get_all_users,
     get_global_stats,
-    ban_user, unban_user, is_banned, get_user_info,
+    ban_user, unban_user, is_banned, get_user_info, get_user_info_by_username,
     get_daily_stats, init_db
 )
 from config import MESSAGES, ADMIN_USER_ID, SUPPORTED_PLATFORMS
@@ -198,15 +198,17 @@ async def user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not _is_admin(update.effective_user.id):
             await update.message.reply_text(MESSAGES["broadcast_no_access"])
             return
-        if not context.args:
+        raw = (update.message.text or "").strip()
+        parts = raw.split(None, 1)
+        arg = (context.args[0] if context.args else (parts[1].strip() if len(parts) > 1 else "")).strip()
+        if not arg:
             await update.message.reply_text(MESSAGES["user_usage"])
             return
+        logger.info(f"user_command lookup arg='{arg}'")
         try:
-            target_id = int(context.args[0])
+            row = get_user_info(int(arg))
         except ValueError:
-            await update.message.reply_text(MESSAGES["user_usage"])
-            return
-        row = get_user_info(target_id)
+            row = get_user_info_by_username(arg)
         if not row:
             await update.message.reply_text(MESSAGES["user_not_found"])
             return

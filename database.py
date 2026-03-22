@@ -206,6 +206,23 @@ def get_user_info(user_id: int):
         return None
 
 
+def get_user_info_by_username(username: str):
+    try:
+        conn = _connect()
+        c = conn.cursor()
+        clean = username.lstrip('@').lower()
+        c.execute(
+            'SELECT user_id, username, first_name, download_count, first_used, last_used FROM users WHERE LOWER(username) = %s',
+            (clean,)
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+    except Exception as e:
+        logger.error("DB get_user_info_by_username error: %s", e)
+        return None
+
+
 def get_daily_stats():
     """Returns (downloads_last_24h, new_users_last_24h, top_3_users)."""
     try:
