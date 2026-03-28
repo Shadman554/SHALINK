@@ -59,7 +59,10 @@ class VideoDownloader:
         
         # Base download options
         self.ydl_opts = {
-            'format': 'best',
+            # bestvideo+bestaudio handles HLS-only platforms (e.g. Pinterest)
+            # where 'best' (combined) is unavailable; merges into mp4 via ffmpeg
+            'format': 'bestvideo+bestaudio/bestvideo/best',
+            'merge_output_format': 'mp4',
             'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -708,9 +711,16 @@ class VideoDownloader:
         try:
             base = os.path.splitext(file_path)[0]
             out = base + '_audio.mp3'
-            cmd = ['ffmpeg', '-i', file_path, '-q:a', '2', '-map', 'a', '-y', out]
+            # First check if the file has an audio stream
+            probe_cmd = ['ffprobe', '-v', 'error', '-select_streams', 'a',
+                         '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', file_path]
+            probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+            if not probe.stdout.strip():
+                logger.warning(f"No audio stream found in: {file_path}")
+                return None, 'no_audio_stream'
+            cmd = ['ffmpeg', '-i', file_path, '-vn', '-q:a', '2', '-y', out]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode == 0 and os.path.exists(out):
+            if result.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
                 return out, 'success'
             logger.error(f"ffmpeg audio extract failed: {result.stderr}")
             return None, 'audio_extract_failed'
@@ -719,12 +729,65 @@ class VideoDownloader:
             return None, 'audio_extract_failed'
 
     def download_audio(self, url: str, progress_hook=None) -> tuple[str | None, str]:
-        """Download audio from any non-YouTube URL by downloading video then extracting MP3."""
+        """Download audio from any non-YouTube URL as MP3.
+
+        Tries yt-dlp native audio extraction first (works well for Pinterest,
+        Twitter, Facebook, TikTok). Falls back to video download + ffmpeg
+        extraction if that fails.
+        """
+        # --- Attempt 1: direct audio via yt-dlp FFmpegExtractAudio ---
+        try:
+            self._cleanup_temp_files()
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(TEMP_DIR, '%(title).100B_%(id)s.%(ext)s'),
+                'http_headers': {
+                    'User-Agent': (
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/120.0.0.0 Safari/537.36'
+                    ),
+                },
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+            }
+            if progress_hook:
+                ydl_opts['progress_hooks'] = [progress_hook]
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    raise ValueError("Could not extract info")
+                ydl.download([url])
+
+            # Find the most recently created mp3
+            mp3_files = [
+                f for f in os.listdir(TEMP_DIR) if f.lower().endswith('.mp3')
+            ]
+            if mp3_files:
+                mp3_files.sort(
+                    key=lambda x: os.path.getctime(os.path.join(TEMP_DIR, x)),
+                    reverse=True
+                )
+                result_path = os.path.join(TEMP_DIR, mp3_files[0])
+                if os.path.exists(result_path) and os.path.getsize(result_path) > 0:
+                    logger.info(f"Direct audio download succeeded: {result_path}")
+                    return result_path, 'success'
+        except Exception as e:
+            logger.warning(f"Direct audio download failed for {url}: {e}")
+
+        # --- Attempt 2: download video then extract audio with ffmpeg ---
         file_path, result = self.download_video(url, progress_hook)
         if not file_path:
             return None, result
         audio_path, audio_result = self.extract_audio_from_download(file_path)
         self.cleanup_file(file_path)
+        if not audio_path:
+            logger.error(f"Audio extraction fallback also failed: {audio_result}")
+            return None, 'audio_extract_failed'
         return audio_path, audio_result
 
     def download_youtube_with_fallback(self, url: str, format_type: str, quality: str = '1080', progress_hook=None) -> tuple[str | None, str, str]:

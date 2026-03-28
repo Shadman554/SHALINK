@@ -54,7 +54,14 @@ def main():
             attempt += 1
             logger.info(f"Bot startup attempt {attempt}/{max_attempts}")
 
-            application = Application.builder().token(BOT_TOKEN).build()
+            application = (
+                Application.builder()
+                .token(BOT_TOKEN)
+                .read_timeout(60)
+                .write_timeout(300)
+                .connect_timeout(30)
+                .build()
+            )
 
             # User commands
             application.add_handler(CommandHandler("start", start_command))
@@ -102,7 +109,14 @@ def main():
             if attempt >= max_attempts:
                 logger.error("Max attempts reached. Bot will force-start anyway.")
                 try:
-                    application = Application.builder().token(BOT_TOKEN).build()
+                    application = (
+                Application.builder()
+                .token(BOT_TOKEN)
+                .read_timeout(60)
+                .write_timeout(300)
+                .connect_timeout(30)
+                .build()
+            )
                     logger.info("Final attempt - Bot starting with force override")
                     application.run_polling(
                         allowed_updates=["message"],
