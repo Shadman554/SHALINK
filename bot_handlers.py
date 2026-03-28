@@ -13,14 +13,14 @@ from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
 )
 from telegram.ext import ContextTypes
-from telegram.error import TelegramError
+from telegram.error import TelegramError, TimedOut, NetworkError
 
 from video_downloader import VideoDownloader
 from database import (
     record_download, get_all_user_ids, get_all_users,
     get_global_stats,
     ban_user, unban_user, is_banned, get_user_info, get_user_info_by_username,
-    get_daily_stats, init_db
+    get_daily_stats, get_download_history, init_db
 )
 from config import MESSAGES, ADMIN_USER_ID, SUPPORTED_PLATFORMS
 
@@ -141,6 +141,13 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         all_users = get_all_users()
 
         text = (
+            "🔐 فەرمانەکانی ئەدمین:\n\n"
+            "/admin — ئامار و لیستی بەکارهێنەران\n"
+            "/broadcast <پەیام> — ناردنی پەیام بۆ هەموو بەکارهێنەران\n"
+            "/user <id یان @username> — زانیاری بەکارهێنەر\n"
+            "/ban <id> — بانکردنی بەکارهێنەر\n"
+            "/unban <id> — لابردنی بانی بەکارهێنەر\n\n"
+            "━━━━━━━━━━━━━━━\n"
             "📊 ئامارەکانی بۆت:\n\n"
             f"👥 کۆی بەکارهێنەران: {total_users}\n"
             f"⬇️ کۆی دابەزاندنەکان: {total_downloads}\n\n"
@@ -214,12 +221,39 @@ async def user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         uid, username, first_name, dl_count, first_used, last_used = row
         banned = "✅ بانکراو" if is_banned(uid) else "🟢 ئازاد"
-        text = MESSAGES["user_info"].format(
-            uid, first_name or '-', username or '-',
-            dl_count, (first_used or '')[:10], (last_used or '')[:10]
+
+        text = (
+            f"👤 زانیاری بەکارهێنەر:\n"
+            f"• ID: {uid}\n"
+            f"• ناو: {first_name or '-'}\n"
+            f"• بەکارهێنەر: @{username or '-'}\n"
+            f"• دۆخ: {banned}\n"
+            f"• کۆی دابەزاندن: {dl_count} جار\n"
+            f"• یەکەم جار: {str(first_used or '')[:16]}\n"
+            f"• دوایین جار: {str(last_used or '')[:16]}\n"
         )
-        text += f"\n• دۆخ: {banned}"
-        await update.message.reply_text(text)
+
+        # Download history
+        history = get_download_history(uid, limit=50)
+        text += f"\n━━━━━━━━━━━━━━━\n"
+        text += f"📋 مێژووی دابەزاندن ({len(history)} دوایین):\n\n"
+        if history:
+            for i, (url, platform, downloaded_at) in enumerate(history, 1):
+                date_str = str(downloaded_at)[:16] if downloaded_at else '-'
+                platform_str = platform or 'نەزانراو'
+                text += f"{i}. [{platform_str}] {date_str}\n{url}\n\n"
+        else:
+            text += "هیچ مێژوویەک نییە.\n"
+
+        # Telegram has a 4096-char message limit — split if needed
+        if len(text) > 4000:
+            for i in range(0, len(text), 4000):
+                await update.message.reply_text(
+                    text[i:i+4000],
+                    disable_web_page_preview=True
+                )
+        else:
+            await update.message.reply_text(text, disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"Error in user_command: {e}")
 
@@ -342,6 +376,11 @@ async def _do_download_and_send(
                     await _send_audio_file(context, chat_id, file_path, completed_msg)
                 else:
                     await _send_video_file(context, chat_id, file_path, completed_msg)
+                record_download(user_id, username, first_name, url, platform)
+            except (TimedOut, NetworkError) as e:
+                # Upload likely reached Telegram despite the timeout — don't
+                # send a false error message; just log and move on.
+                logger.warning(f"Network/timeout error while sending file (file probably delivered): {e}")
                 record_download(user_id, username, first_name, url, platform)
             except TelegramError as e:
                 if "file is too big" in str(e).lower() and format_type != 'audio':
@@ -572,6 +611,12 @@ async def handle_youtube_callback(update: Update, context: ContextTypes.DEFAULT_
                     await _send_audio_file(context, chat_id, file_path, completed_msg)
                 else:
                     await _send_video_file(context, chat_id, file_path, completed_msg)
+                record_download(
+                    user_id, update.effective_user.username,
+                    update.effective_user.first_name, youtube_url, 'YouTube'
+                )
+            except (TimedOut, NetworkError) as e:
+                logger.warning(f"Network/timeout error while sending YouTube file (file probably delivered): {e}")
                 record_download(
                     user_id, update.effective_user.username,
                     update.effective_user.first_name, youtube_url, 'YouTube'
