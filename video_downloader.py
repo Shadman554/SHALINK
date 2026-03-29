@@ -672,52 +672,26 @@ class VideoDownloader:
                     logger.info(f"YouTube download attempt {attempt}/3")
 
                     current_opts = {**ydl_opts, **attempt_configs[attempt - 1]}
-                    
+
+                    # Single extract_info(download=True) call — avoids making two
+                    # separate YouTube API requests per attempt (halves IP hit count)
                     with yt_dlp.YoutubeDL(current_opts) as ydl:
-                        # Get video info first
-                        info = ydl.extract_info(url, download=False)
+                        info = ydl.extract_info(url, download=True)
                         if not info:
                             if attempt == 3:
                                 return None, "Failed to extract video information after all attempts"
                             continue
-                        
-                        # Sanitize title for filename
-                        title = re.sub(r'[^\w\s-]', '', info.get('title', 'youtube_video')).strip().replace(' ', '_')[:50]
-                        
-                        # Update output template with sanitized title
-                        if format_type == 'audio':
-                            filename = f"{title}.mp3"
-                        else:
-                            filename = f"{title}.mp4"
-                        
-                        file_path = os.path.join(TEMP_DIR, filename)
-                        current_opts['outtmpl'] = file_path.replace(f".{filename.split('.')[-1]}", ".%(ext)s")
-                        
-                        # Download the video/audio
-                        with yt_dlp.YoutubeDL(current_opts) as ydl_download:
-                            ydl_download.download([url])
-                        
-                        # Find the actual downloaded file with better search
+
+                        # Find the actual downloaded file by most-recently-created
                         actual_file = None
-                        
-                        # First, look for files with the exact title
-                        for ext in ['mp4', 'mp3', 'webm', 'm4a', 'mkv']:
-                            test_path = file_path.replace(f".{filename.split('.')[-1]}", f".{ext}")
-                            if os.path.exists(test_path):
-                                actual_file = test_path
-                                break
-                        
-                        # If not found, search for any recent file in temp directory
-                        if not actual_file:
-                            try:
-                                temp_files = [f for f in os.listdir(TEMP_DIR) if f.lower().endswith(('.mp4', '.mp3', '.webm', '.m4a', '.mkv'))]
-                                if temp_files:
-                                    # Get the most recent file
-                                    temp_files.sort(key=lambda x: os.path.getctime(os.path.join(TEMP_DIR, x)), reverse=True)
-                                    actual_file = os.path.join(TEMP_DIR, temp_files[0])
-                                    logger.info(f"Found downloaded file by timestamp: {actual_file}")
-                            except Exception as e:
-                                logger.error(f"Error searching for downloaded file: {e}")
+                        try:
+                            temp_files = [f for f in os.listdir(TEMP_DIR) if f.lower().endswith(('.mp4', '.mp3', '.webm', '.m4a', '.mkv'))]
+                            if temp_files:
+                                temp_files.sort(key=lambda x: os.path.getctime(os.path.join(TEMP_DIR, x)), reverse=True)
+                                actual_file = os.path.join(TEMP_DIR, temp_files[0])
+                                logger.info(f"Found downloaded file: {actual_file}")
+                        except Exception as e:
+                            logger.error(f"Error searching for downloaded file: {e}")
                         
                         if actual_file and os.path.exists(actual_file):
                             # Check file size
