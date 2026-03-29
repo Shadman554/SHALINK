@@ -601,15 +601,17 @@ class VideoDownloader:
                 }
 
             # Attempt configs: progressively more permissive
-            # android_vr is skipped by yt-dlp when a cookiefile is set, so use web+android
+            # ios: supports cookies, no n-challenge JS needed, uses Apple API
+            # mweb: mobile web, lighter API, no n-challenge
+            # web: fallback, needs n-challenge but may still return some formats
             attempt_configs = [
-                # Attempt 1: web + android (cookie-compatible, works on server IPs)
-                {'extractor_args': {'youtube': {'player_client': ['web', 'android']}}},
-                # Attempt 2: tv_embedded as fallback (no PO token needed)
-                {'extractor_args': {'youtube': {'player_client': ['tv_embedded', 'web']}}},
-                # Attempt 3: simplified format as last resort
+                # Attempt 1: ios client — cookie-compatible, no JS challenge needed
+                {'extractor_args': {'youtube': {'player_client': ['ios']}}},
+                # Attempt 2: mweb as fallback
+                {'extractor_args': {'youtube': {'player_client': ['mweb', 'ios']}}},
+                # Attempt 3: simplified format with ios as last resort
                 {
-                    'extractor_args': {'youtube': {'player_client': ['web', 'android']}},
+                    'extractor_args': {'youtube': {'player_client': ['ios', 'mweb']}},
                     'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
                 },
             ]
