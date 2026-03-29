@@ -10,7 +10,7 @@ import datetime
 import tempfile
 import logging
 import time
-from telegram.error import Conflict
+from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters
@@ -43,6 +43,14 @@ from bot_handlers import (
     user_command, ban_command, unban_command,
     send_daily_report
 )
+
+
+async def error_handler(update, context):
+    err = context.error
+    if isinstance(err, (Conflict, NetworkError, TimedOut)):
+        logger.warning("Transient error (ignored): %s", err)
+    else:
+        logger.error("Unhandled update error: %s", err, exc_info=err)
 
 
 def main():
@@ -83,6 +91,8 @@ def main():
             application.add_handler(CallbackQueryHandler(
                 handle_download_callback, pattern=r"^dl_(video|audio)_"
             ))
+
+            application.add_error_handler(error_handler)
 
             # Daily report job at 09:00 UTC
             if application.job_queue:

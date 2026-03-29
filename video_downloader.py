@@ -568,6 +568,7 @@ class VideoDownloader:
                 'age_limit': 99,
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
+                'source_address': '0.0.0.0',
             }
 
             # Inject YouTube cookies when available (required on server IPs)
@@ -600,15 +601,15 @@ class VideoDownloader:
                 }
 
             # Attempt configs: progressively more permissive
-            # Let yt-dlp choose the client (defaults to android_vr which works without PO tokens)
+            # android_vr is skipped by yt-dlp when a cookiefile is set, so use web+android
             attempt_configs = [
-                # Attempt 1: yt-dlp default client — works for most videos
-                {},
-                # Attempt 2: explicitly android_vr
-                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                # Attempt 1: web + android (cookie-compatible, works on server IPs)
+                {'extractor_args': {'youtube': {'player_client': ['web', 'android']}}},
+                # Attempt 2: tv_embedded as fallback (no PO token needed)
+                {'extractor_args': {'youtube': {'player_client': ['tv_embedded', 'web']}}},
                 # Attempt 3: simplified format as last resort
                 {
-                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
+                    'extractor_args': {'youtube': {'player_client': ['web', 'android']}},
                     'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
                 },
             ]
