@@ -601,17 +601,16 @@ class VideoDownloader:
                 }
 
             # Attempt configs: progressively more permissive
-            # ios: supports cookies, no n-challenge JS needed, uses Apple API
-            # mweb: mobile web, lighter API, no n-challenge
-            # web: fallback, needs n-challenge but may still return some formats
+            # web: the only client that supports cookies + full format list;
+            #      requires Node.js for n-challenge (now installed via nixpacks)
             attempt_configs = [
-                # Attempt 1: ios client — cookie-compatible, no JS challenge needed
-                {'extractor_args': {'youtube': {'player_client': ['ios']}}},
-                # Attempt 2: mweb as fallback
-                {'extractor_args': {'youtube': {'player_client': ['mweb', 'ios']}}},
-                # Attempt 3: simplified format with ios as last resort
+                # Attempt 1: web client with cookies — standard path
+                {'extractor_args': {'youtube': {'player_client': ['web']}}},
+                # Attempt 2: web + web_safari for broader format coverage
+                {'extractor_args': {'youtube': {'player_client': ['web', 'web_safari']}}},
+                # Attempt 3: simplified format as last resort
                 {
-                    'extractor_args': {'youtube': {'player_client': ['ios', 'mweb']}},
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
                     'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
                 },
             ]
