@@ -67,6 +67,13 @@ class VideoDownloader:
         else:
             logger.info("No YouTube cookies found — downloads may fail on server IPs")
 
+        # Locate ffmpeg — nix-installed binaries may not be in Python's PATH at runtime
+        self.ffmpeg_location = self._find_ffmpeg_location()
+        if self.ffmpeg_location:
+            logger.info(f"ffmpeg found at: {self.ffmpeg_location}")
+        else:
+            logger.warning("ffmpeg not found — audio conversion and format merging may fail")
+
         # Optional PO-token provider integration (bgutil plugin)
         self.youtube_pot_enabled = os.getenv('YOUTUBE_POT_ENABLED', 'false').lower() in ('1', 'true', 'yes', 'on')
         self.youtube_pot_base_url = os.getenv('YOUTUBE_POT_BASE_URL', '').strip() or None
@@ -127,6 +134,28 @@ class VideoDownloader:
             "https://api.dd01.ru/api/tiktok"   # GET ?url=<video_url>        → json.url
         ]
         
+    def _find_ffmpeg_location(self) -> str | None:
+        """Return the directory containing the ffmpeg binary, trying PATH and known nix/system locations."""
+        import shutil
+        exe = shutil.which('ffmpeg')
+        if exe:
+            return os.path.dirname(exe)
+        try:
+            result = subprocess.run('which ffmpeg', shell=True, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return os.path.dirname(result.stdout.strip())
+        except Exception:
+            pass
+        for candidate in [
+            '/nix/var/nix/profiles/default/bin/ffmpeg',
+            '/run/current-system/sw/bin/ffmpeg',
+            '/usr/local/bin/ffmpeg',
+            '/usr/bin/ffmpeg',
+        ]:
+            if os.path.isfile(candidate):
+                return os.path.dirname(candidate)
+        return None
+
     def _validate_cookies(self, *cookie_paths):
         """Validate and return first working cookie file with all required fields."""
         required_fields = ['sessionid', 'ds_user_id', 'csrftoken']
@@ -582,6 +611,9 @@ class VideoDownloader:
 
             if progress_hook:
                 base_opts['progress_hooks'] = [progress_hook]
+
+            if self.ffmpeg_location:
+                base_opts['ffmpeg_location'] = self.ffmpeg_location
 
             if format_type == 'video':
                 ydl_opts = {
