@@ -587,7 +587,8 @@ class VideoDownloader:
                 ydl_opts = {
                     **base_opts,
                     'format': (
-                        f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]'
+                        f'best[height<={height}][ext=mp4]'
+                        f'/bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]'
                         f'/bestvideo[height<={height}]+bestaudio'
                         f'/best[height<={height}]/best'
                     ),

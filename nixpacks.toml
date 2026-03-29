@@ -1,5 +1,5 @@
 [phases.setup]
-aptPkgs = ["nodejs", "npm", "ffmpeg"]
+nixPkgs = ["ffmpeg", "nodejs_20"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
