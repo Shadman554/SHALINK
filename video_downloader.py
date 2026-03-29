@@ -602,11 +602,15 @@ class VideoDownloader:
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
             attempt_configs = [
-                # Attempt 1: web + cookies — primary path, n-challenge solved via Node.js
-                {**cookie_override, 'extractor_args': {'youtube': {'player_client': ['web']}}},
-                # Attempt 2: android_vr — no cookies needed, no n-challenge
+                # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
+                # must run before web client so IP stays clean for this client
                 {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-                # Attempt 3: web + cookies, simplified format as last resort
+                # Attempt 2: android_vr, simplified format fallback
+                {
+                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
+                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                },
+                # Attempt 3: web + cookies as last resort
                 {
                     **cookie_override,
                     'extractor_args': {'youtube': {'player_client': ['web']}},
