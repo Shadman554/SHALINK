@@ -20,20 +20,22 @@ import re
 logger = logging.getLogger(__name__)
 
 # ---- Decode cookie env vars into temp files (Railway safe method) ----
-for env_var, out_name in (('IG_COOKIES_B64', 'instagram.txt'), ('FB_COOKIES_B64', 'facebook.txt')):
+for env_var, out_name in (
+    ('IG_COOKIES_B64', 'instagram.txt'),
+    ('FB_COOKIES_B64', 'facebook.txt'),
+    ('YT_COOKIES_B64', 'youtube.txt'),
+):
     b64_data = os.getenv(env_var)
     logger.info(f"{env_var} present: %s bytes", len(b64_data or ""))
     if b64_data:
         try:
             out_path = pathlib.Path(tempfile.gettempdir()) / out_name
             out_path.write_bytes(base64.b64decode(b64_data))
-            # expose path to downstream logic
-            os.environ[f"{env_var[:-4]}FILE"] = str(out_path)  # sets IG_COOKIES_FILE / FB_COOKIES_FILE
+            os.environ[f"{env_var[:-4]}FILE"] = str(out_path)  # e.g. YT_COOKIES_FILE
             logger.info(f"Decoded {env_var} to {out_path}")
         except Exception as e:
             logger.error(f"Failed to decode {env_var}: {e}")
 # --------------------------------------------------------------------
-import re  # used for sanitising filenames
 
 class VideoDownloader:
     def __init__(self):
@@ -56,6 +58,14 @@ class VideoDownloader:
             os.path.join(os.getcwd(), "facebook_cookies.txt"),
             os.path.join(tempfile.gettempdir(), "facebook.txt")
         )
+
+        # YouTube cookie handling (needed on server IPs blocked by YouTube)
+        yt_cookie_path = os.getenv('YT_COOKIES_FILE') or os.path.join(tempfile.gettempdir(), 'youtube.txt')
+        self.cookies_youtube = yt_cookie_path if os.path.exists(yt_cookie_path) else None
+        if self.cookies_youtube:
+            logger.info(f"YouTube cookies loaded from: {self.cookies_youtube}")
+        else:
+            logger.info("No YouTube cookies found — downloads may fail on server IPs")
         
         # Base download options
         self.ydl_opts = {
@@ -559,6 +569,10 @@ class VideoDownloader:
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
             }
+
+            # Inject YouTube cookies when available (required on server IPs)
+            if self.cookies_youtube:
+                base_opts['cookiefile'] = self.cookies_youtube
 
             if progress_hook:
                 base_opts['progress_hooks'] = [progress_hook]

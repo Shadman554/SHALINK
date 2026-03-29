@@ -64,6 +64,14 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 | `DATABASE_URL` | Yes | PostgreSQL connection string (auto-set by Replit) |
 | `IG_COOKIES_B64` | Optional | Base64-encoded Instagram cookies |
 | `FB_COOKIES_B64` | Optional | Base64-encoded Facebook cookies |
+| `YT_COOKIES_B64` | Needed on server IPs | Base64-encoded YouTube cookies — required when hosting on Railway/Render/VPS to bypass YouTube bot-detection |
+
+### How to get YouTube cookies (`YT_COOKIES_B64`)
+1. Install the **"Get cookies.txt LOCALLY"** browser extension (Chrome/Firefox)
+2. Open **youtube.com** and make sure you are logged in
+3. Click the extension and export cookies for `youtube.com` — save as `youtube_cookies.txt`
+4. Base64-encode the file: `base64 -w 0 youtube_cookies.txt` (Linux/Mac) or use an online encoder
+5. Set the result as the `YT_COOKIES_B64` environment variable in your host (Railway / Replit secrets)
 
 ## Important Notes
 
