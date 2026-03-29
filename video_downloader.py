@@ -135,7 +135,7 @@ class VideoDownloader:
         ]
         
     def _find_ffmpeg_location(self) -> str | None:
-        """Return the directory containing the ffmpeg binary, trying PATH and known nix/system locations."""
+        """Return the directory containing the ffmpeg binary, trying PATH, imageio-ffmpeg bundle, and known nix/system locations."""
         import shutil
         exe = shutil.which('ffmpeg')
         if exe:
@@ -144,6 +144,13 @@ class VideoDownloader:
             result = subprocess.run('which ffmpeg', shell=True, capture_output=True, text=True)
             if result.returncode == 0 and result.stdout.strip():
                 return os.path.dirname(result.stdout.strip())
+        except Exception:
+            pass
+        try:
+            import imageio_ffmpeg
+            bundled = imageio_ffmpeg.get_ffmpeg_exe()
+            if bundled and os.path.isfile(bundled):
+                return os.path.dirname(bundled)
         except Exception:
             pass
         for candidate in [
@@ -643,43 +650,22 @@ class VideoDownloader:
             # cookiefile — yt-dlp skips it entirely when one is present.
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
-            if self.youtube_pot_enabled:
-                web_extractor_args = {
-                    'youtube': {'player_client': ['web']},
-                    'youtubepot-bgutilhttp': {},
-                }
-                if self.youtube_pot_base_url:
-                    web_extractor_args['youtubepot-bgutilhttp'] = {'base_url': [self.youtube_pot_base_url]}
-
-                attempt_configs = [
-                    # Attempt 1: web + cookies + PO provider
-                    {**cookie_override, 'extractor_args': web_extractor_args},
-                    # Attempt 2: android_vr fallback (no cookies, no n-challenge)
-                    {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-                    # Attempt 3: simplified web + PO provider
-                    {
-                        **cookie_override,
-                        'extractor_args': web_extractor_args,
-                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
-                    },
-                ]
-            else:
-                attempt_configs = [
-                    # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
-                    # must run before web client so IP stays clean for this client
-                    {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-                    # Attempt 2: android_vr, simplified format fallback
-                    {
-                        'extractor_args': {'youtube': {'player_client': ['android_vr']}},
-                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
-                    },
-                    # Attempt 3: web + cookies as last resort
-                    {
-                        **cookie_override,
-                        'extractor_args': {'youtube': {'player_client': ['web']}},
-                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
-                    },
-                ]
+            attempt_configs = [
+                # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
+                # must run before web client so IP stays clean for this client
+                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                # Attempt 2: android_vr, simplified format fallback
+                {
+                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
+                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                },
+                # Attempt 3: web + cookies as last resort
+                {
+                    **cookie_override,
+                    'extractor_args': {'youtube': {'player_client': ['web']}},
+                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                },
+            ]
 
             for attempt in range(1, 4):
                 try:
