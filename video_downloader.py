@@ -571,10 +571,6 @@ class VideoDownloader:
                 'source_address': '0.0.0.0',
             }
 
-            # Inject YouTube cookies when available (required on server IPs)
-            if self.cookies_youtube:
-                base_opts['cookiefile'] = self.cookies_youtube
-
             if progress_hook:
                 base_opts['progress_hooks'] = [progress_hook]
 
@@ -600,17 +596,19 @@ class VideoDownloader:
                     }],
                 }
 
-            # Attempt configs: progressively more permissive
-            # web: the only client that supports cookies + full format list;
-            #      requires Node.js for n-challenge (now installed via nixpacks)
+            # cookie_override is injected only into attempts that use the web
+            # client (which supports cookies). android_vr must NOT receive a
+            # cookiefile — yt-dlp skips it entirely when one is present.
+            cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
+
             attempt_configs = [
-                # Attempt 1: web client with cookies — standard path
-                {'extractor_args': {'youtube': {'player_client': ['web']}}},
-                # Attempt 2: web + web_safari for broader format coverage
-                {'extractor_args': {'youtube': {'player_client': ['web', 'web_safari']}}},
-                # Attempt 3: simplified format as last resort
+                # Attempt 1: android_vr — no cookies, no n-challenge, works on server IPs
+                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                # Attempt 2: web + cookies — authenticated, needs Node.js n-challenge
+                {**cookie_override, 'extractor_args': {'youtube': {'player_client': ['web']}}},
+                # Attempt 3: android_vr, no cookies, simplified format as last resort
                 {
-                    'extractor_args': {'youtube': {'player_client': ['web']}},
+                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
                     'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
                 },
             ]
