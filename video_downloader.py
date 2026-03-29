@@ -66,6 +66,15 @@ class VideoDownloader:
             logger.info(f"YouTube cookies loaded from: {self.cookies_youtube}")
         else:
             logger.info("No YouTube cookies found — downloads may fail on server IPs")
+
+        # Optional PO-token provider integration (bgutil plugin)
+        self.youtube_pot_enabled = os.getenv('YOUTUBE_POT_ENABLED', 'false').lower() in ('1', 'true', 'yes', 'on')
+        self.youtube_pot_base_url = os.getenv('YOUTUBE_POT_BASE_URL', '').strip() or None
+        if self.youtube_pot_enabled:
+            if self.youtube_pot_base_url:
+                logger.info(f"YouTube PO provider enabled at: {self.youtube_pot_base_url}")
+            else:
+                logger.info("YouTube PO provider enabled with default endpoint (http://127.0.0.1:4416)")
         
         # Base download options
         self.ydl_opts = {
@@ -601,22 +610,43 @@ class VideoDownloader:
             # cookiefile — yt-dlp skips it entirely when one is present.
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
-            attempt_configs = [
-                # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
-                # must run before web client so IP stays clean for this client
-                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-                # Attempt 2: android_vr, simplified format fallback
-                {
-                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
-                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
-                },
-                # Attempt 3: web + cookies as last resort
-                {
-                    **cookie_override,
-                    'extractor_args': {'youtube': {'player_client': ['web']}},
-                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
-                },
-            ]
+            if self.youtube_pot_enabled:
+                web_extractor_args = {
+                    'youtube': {'player_client': ['web']},
+                    'youtubepot-bgutilhttp': {},
+                }
+                if self.youtube_pot_base_url:
+                    web_extractor_args['youtubepot-bgutilhttp'] = {'base_url': [self.youtube_pot_base_url]}
+
+                attempt_configs = [
+                    # Attempt 1: web + cookies + PO provider
+                    {**cookie_override, 'extractor_args': web_extractor_args},
+                    # Attempt 2: android_vr fallback (no cookies, no n-challenge)
+                    {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                    # Attempt 3: simplified web + PO provider
+                    {
+                        **cookie_override,
+                        'extractor_args': web_extractor_args,
+                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                    },
+                ]
+            else:
+                attempt_configs = [
+                    # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
+                    # must run before web client so IP stays clean for this client
+                    {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
+                    # Attempt 2: android_vr, simplified format fallback
+                    {
+                        'extractor_args': {'youtube': {'player_client': ['android_vr']}},
+                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                    },
+                    # Attempt 3: web + cookies as last resort
+                    {
+                        **cookie_override,
+                        'extractor_args': {'youtube': {'player_client': ['web']}},
+                        'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                    },
+                ]
 
             for attempt in range(1, 4):
                 try:
