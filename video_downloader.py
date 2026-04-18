@@ -16,6 +16,8 @@ import requests
 import time
 import subprocess
 import re
+import shutil
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ for env_var, out_name in (
         try:
             out_path = pathlib.Path(tempfile.gettempdir()) / out_name
             out_path.write_bytes(base64.b64decode(b64_data))
-            os.environ[f"{env_var[:-4]}FILE"] = str(out_path)  # e.g. YT_COOKIES_FILE
+            os.environ[f"{env_var.removesuffix('_B64')}_FILE"] = str(out_path)
             logger.info(f"Decoded {env_var} to {out_path}")
         except Exception as e:
             logger.error(f"Failed to decode {env_var}: {e}")
@@ -49,14 +51,16 @@ class VideoDownloader:
         self.cookies_instagram = self._validate_cookies(
             os.getenv('IG_COOKIES_FILE'),
             os.path.join(os.getcwd(), "instagram_cookies.txt"),
-            os.path.join(tempfile.gettempdir(), "instagram.txt")
+            os.path.join(tempfile.gettempdir(), "instagram.txt"),
+            required_fields=('sessionid', 'ds_user_id', 'csrftoken')
         )
         
         # Facebook cookie handling
         self.cookies_facebook = self._validate_cookies(
             os.getenv('FB_COOKIES_FILE'),
             os.path.join(os.getcwd(), "facebook_cookies.txt"),
-            os.path.join(tempfile.gettempdir(), "facebook.txt")
+            os.path.join(tempfile.gettempdir(), "facebook.txt"),
+            required_fields=None
         )
 
         # YouTube cookie handling (needed on server IPs blocked by YouTube)
@@ -92,6 +96,7 @@ class VideoDownloader:
             'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
             'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
+            'max_filesize': MAX_FILE_SIZE,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.instagram.com/'
@@ -143,46 +148,68 @@ class VideoDownloader:
         
     def _find_ffmpeg_location(self) -> str | None:
         """Return the directory containing the ffmpeg binary, trying PATH, imageio-ffmpeg bundle, and known nix/system locations."""
-        import shutil
-        exe = shutil.which('ffmpeg')
-        if exe:
-            return os.path.dirname(exe)
-        try:
-            result = subprocess.run('which ffmpeg', shell=True, capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return os.path.dirname(result.stdout.strip())
-        except Exception:
-            pass
+        def has_pair(directory: str | None) -> bool:
+            if not directory:
+                return False
+            return (
+                os.path.isfile(os.path.join(directory, 'ffmpeg')) and
+                os.path.isfile(os.path.join(directory, 'ffprobe'))
+            )
+
+        for path_dir in os.environ.get('PATH', '').split(os.pathsep):
+            if has_pair(path_dir):
+                return path_dir
+
         try:
             import imageio_ffmpeg
             bundled = imageio_ffmpeg.get_ffmpeg_exe()
-            if bundled and os.path.isfile(bundled):
-                return os.path.dirname(bundled)
+            bundled_dir = os.path.dirname(bundled) if bundled else None
+            if has_pair(bundled_dir):
+                return bundled_dir
         except Exception:
             pass
+
         for candidate in [
             '/nix/var/nix/profiles/default/bin/ffmpeg',
             '/run/current-system/sw/bin/ffmpeg',
             '/usr/local/bin/ffmpeg',
             '/usr/bin/ffmpeg',
         ]:
-            if os.path.isfile(candidate):
+            candidate_dir = os.path.dirname(candidate)
+            if os.path.isfile(candidate) and os.path.isfile(os.path.join(candidate_dir, 'ffprobe')):
                 return os.path.dirname(candidate)
+
+        exe = shutil.which('ffmpeg')
+        probe = shutil.which('ffprobe')
+        if exe and probe:
+            logger.warning(
+                "ffmpeg and ffprobe are present but in different directories: ffmpeg=%s ffprobe=%s",
+                exe,
+                probe,
+            )
+            return os.path.dirname(exe)
+
         return None
 
-    def _validate_cookies(self, *cookie_paths):
+    def _validate_cookies(self, *cookie_paths, required_fields=None):
         """Validate and return first working cookie file with all required fields."""
-        required_fields = ['sessionid', 'ds_user_id', 'csrftoken']
         for path in cookie_paths:
             if path and os.path.exists(path):
                 try:
                     with open(path) as f:
                         content = f.read()
-                        if all(field in content for field in required_fields):
+                        if content.strip() and (
+                            not required_fields or all(field in content for field in required_fields)
+                        ):
                             return path
                 except Exception:
                     continue
         return None
+
+    def _new_work_dir(self, prefix: str) -> str:
+        work_dir = os.path.join(TEMP_DIR, f"{prefix}_{uuid.uuid4().hex}")
+        os.makedirs(work_dir, exist_ok=True)
+        return work_dir
     
     def _load_session(self):
         """Load persistent session if exists."""
@@ -338,11 +365,14 @@ class VideoDownloader:
     
     def _download_instagram_video(self, url: str) -> tuple[str | None, str]:
         """Enhanced Instagram downloader with better cookie handling."""
+        work_dir = self._new_work_dir('instagram')
         try:
             if not self.cookies_instagram:
+                shutil.rmtree(work_dir, ignore_errors=True)
                 return None, "instagram_auth_required"
                 
             ydl_opts = {**self.ydl_opts, **self.instagram_opts}
+            ydl_opts['outtmpl'] = os.path.join(work_dir, '%(title).150B_%(id)s.%(ext)s')
             
             # Try with cookies first
             for attempt in range(3):
@@ -354,7 +384,7 @@ class VideoDownloader:
                         dl_start = time.time()
                         ydl.download([url])
                         title = info.get('title', 'instagram_video')
-                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
+                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start, search_dir=work_dir)
                         
                         if downloaded_file and os.path.exists(downloaded_file):
                             return downloaded_file, title
@@ -368,6 +398,7 @@ class VideoDownloader:
             
         except Exception as e:
             logger.error(f"Instagram download error: {e}")
+            shutil.rmtree(work_dir, ignore_errors=True)
             return None, "instagram_download_failed"
             
     def _download_tiktok_video(self, url: str) -> tuple[str | None, str]:
@@ -401,6 +432,8 @@ class VideoDownloader:
                 **self.tiktok_opts,
                 'extractor_args': {}
             }
+            work_dir = self._new_work_dir('tiktok')
+            ydl_opts['outtmpl'] = os.path.join(work_dir, '%(title).150B_%(id)s.%(ext)s')
             
             for attempt in range(3):
                 try:
@@ -411,7 +444,7 @@ class VideoDownloader:
                         dl_start = time.time()
                         ydl.download([url])
                         title = info.get('title', 'tiktok_video')
-                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
+                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start, search_dir=work_dir)
                         
                         if downloaded_file and os.path.exists(downloaded_file):
                             return downloaded_file, title
@@ -421,10 +454,13 @@ class VideoDownloader:
                         raise
                     time.sleep(1)
                     
+            shutil.rmtree(work_dir, ignore_errors=True)
             return None, "tiktok_download_failed"
             
         except Exception as e:
             logger.error(f"TikTok download error: {e}")
+            if 'work_dir' in locals():
+                shutil.rmtree(work_dir, ignore_errors=True)
             return None, "tiktok_download_failed"
     
     
@@ -453,8 +489,10 @@ class VideoDownloader:
             if 'tiktok.com' in url:
                 return self._download_tiktok_video(url)
             
+            work_dir = self._new_work_dir('video')
             # Clone options so we don't mutate the shared dict
             ydl_opts = self.ydl_opts.copy()
+            ydl_opts['outtmpl'] = os.path.join(work_dir, '%(title).150B_%(id)s.%(ext)s')
             
             if any(site in url for site in ("facebook.com", "fb.com")) and self.cookies_facebook:
                 ydl_opts["cookiefile"] = self.cookies_facebook
@@ -489,7 +527,7 @@ class VideoDownloader:
                         time.sleep(1)
                 
                 # Find the downloaded file
-                downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
+                downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start, search_dir=work_dir)
                 
                 if downloaded_file and os.path.exists(downloaded_file):
                     # Check actual file size
@@ -499,13 +537,18 @@ class VideoDownloader:
                     
                     return downloaded_file, title
                 else:
+                    shutil.rmtree(work_dir, ignore_errors=True)
                     return None, "download_failed"
                     
         except yt_dlp.DownloadError as e:
             logger.error(f"yt-dlp download error: {e}")
+            if 'work_dir' in locals():
+                shutil.rmtree(work_dir, ignore_errors=True)
             return None, "download_failed"
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {e}")
+            if 'work_dir' in locals():
+                shutil.rmtree(work_dir, ignore_errors=True)
             return None, "download_failed"
     
     def _download_from_url(self, video_url: str, title: str) -> tuple[str | None, str]:
@@ -516,18 +559,28 @@ class VideoDownloader:
         even large files do not exhaust memory.
         """
         try:
-            # Sanitise title for filesystem
+            work_dir = self._new_work_dir('direct')
             safe_title = re.sub(r"[^\w\- ]", "", title)[:50] or "tiktok_video"
-            dst = os.path.join(TEMP_DIR, f"{safe_title}_{int(time.time())}.mp4")
+            dst = os.path.join(work_dir, f"{safe_title}_{int(time.time())}.mp4")
             with requests.get(video_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
+                content_length = int(r.headers.get("content-length") or 0)
+                if content_length and content_length > MAX_FILE_SIZE:
+                    shutil.rmtree(work_dir, ignore_errors=True)
+                    return None, "file_too_large"
+                downloaded = 0
                 with open(dst, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         if chunk:
+                            downloaded += len(chunk)
+                            if downloaded > MAX_FILE_SIZE:
+                                f.close()
+                                shutil.rmtree(work_dir, ignore_errors=True)
+                                return None, "file_too_large"
                             f.write(chunk)
             # Enforce file-size limit
             if os.path.getsize(dst) > MAX_FILE_SIZE:
-                os.remove(dst)
+                shutil.rmtree(work_dir, ignore_errors=True)
                 return None, "file_too_large"
             return dst, safe_title
         except Exception as e:
@@ -536,11 +589,13 @@ class VideoDownloader:
             try:
                 if 'dst' in locals() and 'dst' in locals() and os.path.exists(locals().get('dst', '')):
                     os.remove(locals()['dst'])
+                if 'work_dir' in locals():
+                    shutil.rmtree(work_dir, ignore_errors=True)
             except Exception:
                 pass
             return None, "download_failed"
 
-    def _find_downloaded_file(self, title: str, min_mtime: float = 0.0) -> str | None:
+    def _find_downloaded_file(self, title: str, min_mtime: float = 0.0, search_dir: str = TEMP_DIR) -> str | None:
         """Find the downloaded file in the temp directory.
 
         Args:
@@ -551,8 +606,8 @@ class VideoDownloader:
         try:
             valid_exts = ('.mp4', '.mp3', '.webm', '.m4a', '.mkv', '.mov', '.avi')
             candidates = []
-            for fname in os.listdir(TEMP_DIR):
-                fpath = os.path.join(TEMP_DIR, fname)
+            for fname in os.listdir(search_dir):
+                fpath = os.path.join(search_dir, fname)
                 if not os.path.isfile(fpath):
                     continue
                 if not fname.lower().endswith(valid_exts):
@@ -569,16 +624,16 @@ class VideoDownloader:
             if safe_prefix:
                 title_matches = [f for f in candidates if os.path.basename(f).startswith(safe_prefix)]
                 if title_matches:
-                    return max(title_matches, key=os.path.getmtime)
+                    return str(max(title_matches, key=os.path.getmtime))
 
             # Fall back to the most recently modified file among candidates
-            return max(candidates, key=os.path.getmtime)
+            return str(max(candidates, key=os.path.getmtime))
 
         except Exception as e:
             logger.error(f"Error finding downloaded file: {e}")
             return None
     
-    def download_youtube(self, url: str, format_type: str, quality: str = '1080', progress_hook=None) -> tuple[str | None, str]:
+    def download_youtube(self, url: str, format_type: str, quality: str | None = '1080', progress_hook=None) -> tuple[str | None, str]:
         """
         Download YouTube video or audio with specific quality options.
         
@@ -598,13 +653,15 @@ class VideoDownloader:
             height = quality if quality else '1080'
 
             # Common base options shared by all attempts
-            base_opts = {
-                'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
+            work_dir = self._new_work_dir('youtube')
+            base_opts: dict[str, object] = {
+                'outtmpl': os.path.join(work_dir, '%(title).150B_%(id)s.%(ext)s'),
                 'prefer_ffmpeg': True,
                 'writeinfojson': False,
                 'writethumbnail': False,
                 'extractor_retries': 3,
                 'fragment_retries': 3,
+                'max_filesize': MAX_FILE_SIZE,
                 'age_limit': 99,
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
@@ -680,10 +737,10 @@ class VideoDownloader:
                         # Find the actual downloaded file by most-recently-created
                         actual_file = None
                         try:
-                            temp_files = [f for f in os.listdir(TEMP_DIR) if f.lower().endswith(('.mp4', '.mp3', '.webm', '.m4a', '.mkv'))]
+                            temp_files = [f for f in os.listdir(work_dir) if f.lower().endswith(('.mp4', '.mp3', '.webm', '.m4a', '.mkv'))]
                             if temp_files:
-                                temp_files.sort(key=lambda x: os.path.getctime(os.path.join(TEMP_DIR, x)), reverse=True)
-                                actual_file = os.path.join(TEMP_DIR, temp_files[0])
+                                temp_files.sort(key=lambda x: os.path.getctime(os.path.join(work_dir, x)), reverse=True)
+                                actual_file = os.path.join(work_dir, temp_files[0])
                                 logger.info(f"Found downloaded file: {actual_file}")
                         except Exception as e:
                             logger.error(f"Error searching for downloaded file: {e}")
@@ -693,13 +750,14 @@ class VideoDownloader:
                             file_size = os.path.getsize(actual_file)
                             if file_size > MAX_FILE_SIZE:
                                 self.cleanup_file(actual_file)
-                                return None, f"File too large: {file_size / (1024*1024):.1f}MB (max: {MAX_FILE_SIZE / (1024*1024):.1f}MB)"
+                                return None, "file_too_large"
                             
                             logger.info(f"YouTube {format_type} downloaded successfully: {actual_file} ({file_size} bytes)")
                             return actual_file, "Success"
                         
                         # If this attempt failed, try the next one
                         if attempt == 3:
+                            shutil.rmtree(work_dir, ignore_errors=True)
                             return None, f"Downloaded file not found for {format_type} after all attempts"
                         else:
                             logger.warning(f"Attempt {attempt} failed, trying next approach...")
@@ -708,14 +766,18 @@ class VideoDownloader:
                 except Exception as e:
                     logger.error(f"YouTube download attempt {attempt} failed: {e}")
                     if attempt == 3:
+                        shutil.rmtree(work_dir, ignore_errors=True)
                         return None, f"Download failed after all attempts: {str(e)}"
                     continue
             
             # If we reach here, all attempts failed
+            shutil.rmtree(work_dir, ignore_errors=True)
             return None, "All download attempts failed"
                 
         except Exception as e:
             logger.error(f"Error downloading YouTube {format_type}: {e}")
+            if 'work_dir' in locals():
+                shutil.rmtree(work_dir, ignore_errors=True)
             return None, f"Download failed: {str(e)}"
     
     def _cleanup_temp_files(self):
@@ -726,11 +788,14 @@ class VideoDownloader:
             
             for filename in os.listdir(TEMP_DIR):
                 file_path = os.path.join(TEMP_DIR, filename)
-                if os.path.isfile(file_path):
-                    file_age = current_time - os.path.getctime(file_path)
-                    if file_age > 3600:  # 1 hour
+                file_age = current_time - os.path.getctime(file_path)
+                if file_age > 3600:
+                    if os.path.isfile(file_path):
                         os.remove(file_path)
                         logger.info(f"Cleaned up old file: {filename}")
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path, ignore_errors=True)
+                        logger.info(f"Cleaned up old directory: {filename}")
         except Exception as e:
             logger.error(f"Error cleaning up temp files: {e}")
     
@@ -738,8 +803,14 @@ class VideoDownloader:
         """Remove a specific file after use."""
         try:
             if file_path and os.path.exists(file_path):
+                parent = os.path.dirname(file_path)
                 os.remove(file_path)
                 logger.info(f"Cleaned up file: {file_path}")
+                if parent.startswith(TEMP_DIR) and parent != TEMP_DIR:
+                    try:
+                        os.rmdir(parent)
+                    except OSError:
+                        pass
         except Exception as e:
             logger.error(f"Error cleaning up file {file_path}: {e}")
     
@@ -794,7 +865,8 @@ class VideoDownloader:
         try:
             ydl_opts = {
                 'format': 'bestaudio/best',
-                'outtmpl': os.path.join(TEMP_DIR, '%(title).100B_%(id)s.%(ext)s'),
+                'outtmpl': os.path.join(self._new_work_dir('audio'), '%(title).100B_%(id)s.%(ext)s'),
+                'max_filesize': MAX_FILE_SIZE,
                 'http_headers': {
                     'User-Agent': (
                         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -820,6 +892,7 @@ class VideoDownloader:
                 ydl_opts['cookiefile'] = self.cookies_facebook
 
             dl_start = time.time()
+            audio_dir = os.path.dirname(ydl_opts['outtmpl'])
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 if not info:
@@ -828,17 +901,19 @@ class VideoDownloader:
 
             # Find the most recently modified mp3
             mp3_files = [
-                os.path.join(TEMP_DIR, f)
-                for f in os.listdir(TEMP_DIR)
-                if f.lower().endswith('.mp3') and os.path.getmtime(os.path.join(TEMP_DIR, f)) >= dl_start
+                os.path.join(audio_dir, f)
+                for f in os.listdir(audio_dir)
+                if f.lower().endswith('.mp3') and os.path.getmtime(os.path.join(audio_dir, f)) >= dl_start
             ]
             if mp3_files:
-                result_path = max(mp3_files, key=os.path.getmtime)
+                result_path = str(max(mp3_files, key=os.path.getmtime))
                 if os.path.exists(result_path) and os.path.getsize(result_path) > 0:
                     logger.info(f"Direct audio download succeeded: {result_path}")
                     return result_path, 'success'
         except Exception as e:
             logger.warning(f"Direct audio download failed for {url}: {e}")
+            if 'audio_dir' in locals():
+                shutil.rmtree(audio_dir, ignore_errors=True)
 
         # --- Attempt 2: download video then extract audio with ffmpeg ---
         file_path, result = self.download_video(url, progress_hook)

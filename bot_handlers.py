@@ -8,6 +8,7 @@ import time
 import asyncio
 import logging
 import datetime
+import uuid
 from urllib.parse import urlparse
 
 from telegram import (
@@ -23,12 +24,16 @@ from database import (
     ban_user, unban_user, is_banned, get_user_info, get_user_info_by_username,
     get_daily_stats, get_download_history, init_db
 )
-from config import MESSAGES, ADMIN_USER_ID, SUPPORTED_PLATFORMS
+from config import (
+    MESSAGES, ADMIN_USER_ID, SUPPORTED_PLATFORMS,
+    BOT_MAX_CONCURRENT_DOWNLOADS, BOT_MAX_BATCH_LINKS
+)
 
 logger = logging.getLogger(__name__)
 
 downloader = VideoDownloader()
 init_db()
+DOWNLOAD_SEMAPHORE = asyncio.Semaphore(BOT_MAX_CONCURRENT_DOWNLOADS)
 
 URL_PATTERN = re.compile(r'https?://[^\s<>"{}|\\^`\[\]]+', re.IGNORECASE)
 
@@ -75,8 +80,15 @@ def _detect_platform(url: str) -> str:
 
 
 def _is_admin(user_id: int) -> bool:
-    admin_id = int(os.getenv("ADMIN_USER_ID", "0"))
+    admin_id = _get_admin_id()
     return admin_id != 0 and user_id == admin_id
+
+
+def _get_admin_id() -> int:
+    try:
+        return int(os.getenv("ADMIN_USER_ID", "0"))
+    except (TypeError, ValueError):
+        return 0
 
 
 async def _check_banned(update: Update) -> bool:
@@ -200,7 +212,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
-        admin_id = int(os.getenv("ADMIN_USER_ID", "0"))
+        admin_id = _get_admin_id()
         logger.info(f"Broadcast check — user_id={user_id}, admin_id={admin_id}")
         if admin_id == 0 or user_id != admin_id:
             await update.message.reply_text(MESSAGES["broadcast_no_access"])
@@ -332,7 +344,7 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
     try:
-        admin_id = int(os.getenv("ADMIN_USER_ID", "0"))
+        admin_id = _get_admin_id()
         if not admin_id:
             return
         downloads, new_users, top_users = get_daily_stats()
@@ -353,7 +365,7 @@ async def send_daily_report(context: ContextTypes.DEFAULT_TYPE):
 async def _handle_single_video(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str):
     """Show format picker (Video / Audio) for a single non-YouTube URL."""
     user_id = update.effective_user.id
-    url_key = f'dl_{user_id}_{abs(hash(url)) % 1000000}'
+    url_key = f"dl_{user_id}_{uuid.uuid4().hex[:10]}"
     context.user_data[url_key] = url
     platform = _detect_platform(url)
     keyboard = [[
@@ -383,16 +395,23 @@ async def _do_download_and_send(
     platform = _detect_platform(url)
 
     try:
-        if format_type == 'audio':
-            file_path, result = await asyncio.to_thread(
-                downloader.download_audio, url, progress_hook
-            )
-            completed_msg = MESSAGES["completed_audio_generic"]
-        else:
-            file_path, result = await asyncio.to_thread(
-                downloader.download_video, url, progress_hook
-            )
-            completed_msg = MESSAGES["completed"]
+        if DOWNLOAD_SEMAPHORE.locked():
+            try:
+                await processing_message.edit_text(MESSAGES["queued"], disable_web_page_preview=True)
+            except Exception:
+                pass
+
+        async with DOWNLOAD_SEMAPHORE:
+            if format_type == 'audio':
+                file_path, result = await asyncio.to_thread(
+                    downloader.download_audio, url, progress_hook
+                )
+                completed_msg = MESSAGES["completed_audio_generic"]
+            else:
+                file_path, result = await asyncio.to_thread(
+                    downloader.download_video, url, progress_hook
+                )
+                completed_msg = MESSAGES["completed"]
 
         # Stop the progress hook before touching the message
         stop_hook()
@@ -474,13 +493,19 @@ async def handle_video_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not supported:
             await update.message.reply_text(MESSAGES["error_unsupported"])
             return
+        if len(supported) > BOT_MAX_BATCH_LINKS:
+            await update.message.reply_text(
+                MESSAGES["batch_limited"].format(BOT_MAX_BATCH_LINKS),
+                disable_web_page_preview=True
+            )
+            supported = supported[:BOT_MAX_BATCH_LINKS]
 
         yt_urls = [u for u in supported if _is_youtube_url(u)]
         other_urls = [u for u in supported if not _is_youtube_url(u)]
 
         # YouTube: show quality picker
         for yt_url in yt_urls:
-            url_key = f'yt_url_{user_id}_{abs(hash(yt_url)) % 1000000}'
+            url_key = f"yt_{user_id}_{uuid.uuid4().hex[:10]}"
             context.user_data[url_key] = yt_url
             keyboard = [
                 [
@@ -629,10 +654,17 @@ async def handle_youtube_callback(update: Update, context: ContextTypes.DEFAULT_
 
         progress_hook, stop_hook = _make_progress_hook(loop, query.message)
 
-        file_path, result, quality_used = await asyncio.to_thread(
-            downloader.download_youtube_with_fallback,
-            youtube_url, format_type, quality or '1080', progress_hook
-        )
+        if DOWNLOAD_SEMAPHORE.locked():
+            try:
+                await query.edit_message_text(MESSAGES["queued"], disable_web_page_preview=True)
+            except Exception:
+                pass
+
+        async with DOWNLOAD_SEMAPHORE:
+            file_path, result, quality_used = await asyncio.to_thread(
+                downloader.download_youtube_with_fallback,
+                youtube_url, format_type, quality or '1080', progress_hook
+            )
 
         # Stop hook before any message operations
         stop_hook()

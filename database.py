@@ -6,7 +6,7 @@ Uses DATABASE_URL environment variable (automatically set by Replit/Railway).
 import os
 import logging
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
 from psycopg2 import pool
@@ -251,7 +251,7 @@ def get_daily_stats():
     try:
         with _get_conn() as conn:
             c = conn.cursor()
-            since = datetime.utcnow() - timedelta(days=1)
+            since = datetime.now(timezone.utc) - timedelta(days=1)
             c.execute('SELECT COUNT(*) FROM download_history WHERE downloaded_at >= %s', (since,))
             downloads = c.fetchone()[0]
             c.execute('SELECT COUNT(*) FROM users WHERE first_used >= %s', (since,))

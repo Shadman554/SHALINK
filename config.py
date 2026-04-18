@@ -9,7 +9,16 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
+def _env_int(name: str, default: int = 0) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+ADMIN_USER_ID = _env_int("ADMIN_USER_ID", 0)
+BOT_MAX_CONCURRENT_DOWNLOADS = max(1, _env_int("BOT_MAX_CONCURRENT_DOWNLOADS", 3))
+BOT_MAX_BATCH_LINKS = max(1, _env_int("BOT_MAX_BATCH_LINKS", 10))
+TELEGRAM_UPLOAD_LIMIT_MB = max(1, _env_int("TELEGRAM_UPLOAD_LIMIT_MB", 48))
 
 SUPPORTED_PLATFORMS = [
     "tiktok.com",
@@ -50,6 +59,7 @@ MESSAGES = {
         "٥. ڤیدیۆکانی تیکتۆک دەتوانیت بەبێ لۆگۆ داببەزێنیت."
     ),
     "processing": "⏳ چاوەڕێ بە...",
+    "queued": "⏳ داواکاریەکەت لە ڕیزدایە، تکایە چاوەڕێ بە...",
     "downloading": "⬇️ دادەبەزێت... {}%",
     "completed": "✅ فەرموو ئەوەش ڤیدیۆکەت",
     "error_invalid_link": "❌ لینکەکە دروست نییە، تکایە لینکێکی دروست دابنێ",
@@ -73,6 +83,7 @@ MESSAGES = {
     "compressing": "⚙️ ڤیدیۆکە زۆر گەورەیە، بچووک دەکرێتەوە...",
     "batch_start": "⬇️ {} لینک دیارکرا، دادەبەزێت...",
     "batch_item": "⬇️ ({}/{}) دادەبەزێت...",
+    "batch_limited": "⚠️ ژمارەی لینکەکان زۆرە؛ تەنها یەکەم {} لینک جێبەجێ دەکرێت.",
     "broadcast_usage": "⚙️ بەکارهێنان: /broadcast <پەیام>",
     "broadcast_no_access": "❌ تەنها ئەدمین دەتوانێت ئەم فەرمانە بەکاربهێنێت",
     "broadcast_done": "✅ پەیامەکە بۆ {} بەکارهێنەر نێردرا",
@@ -116,5 +127,5 @@ MESSAGES = {
 
 INSTAGRAM_PROXY = os.getenv('INSTAGRAM_PROXY') or None
 
-MAX_FILE_SIZE = 1000 * 1024 * 1024
+MAX_FILE_SIZE = TELEGRAM_UPLOAD_LIMIT_MB * 1024 * 1024
 TEMP_DIR = "/tmp/telegram_bot_downloads"

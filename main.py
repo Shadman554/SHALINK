@@ -15,13 +15,15 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, filters
 )
-from config import BOT_TOKEN
+from config import BOT_TOKEN, BOT_MAX_CONCURRENT_DOWNLOADS
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def force_cleanup_bot_instance():
@@ -55,12 +57,11 @@ async def error_handler(update, context):
 
 def main():
     attempt = 0
-    max_attempts = 3
 
-    while attempt < max_attempts:
+    while True:
         try:
             attempt += 1
-            logger.info(f"Bot startup attempt {attempt}/{max_attempts}")
+            logger.info(f"Bot startup attempt {attempt}")
 
             application = (
                 Application.builder()
@@ -68,6 +69,9 @@ def main():
                 .read_timeout(60)
                 .write_timeout(300)
                 .connect_timeout(30)
+                .pool_timeout(60)
+                .connection_pool_size(max(8, BOT_MAX_CONCURRENT_DOWNLOADS * 4))
+                .concurrent_updates(max(4, BOT_MAX_CONCURRENT_DOWNLOADS * 2))
                 .build()
             )
 
@@ -115,28 +119,14 @@ def main():
             break
 
         except Conflict as e:
-            logger.warning("Conflict detected. Attempting immediate takeover (attempt %d/%d)", attempt, max_attempts)
-            if attempt >= max_attempts:
-                logger.error("Max attempts reached. Bot will force-start anyway.")
-                try:
-                    application = (
-                Application.builder()
-                .token(BOT_TOKEN)
-                .read_timeout(60)
-                .write_timeout(300)
-                .connect_timeout(30)
-                .build()
+            wait_seconds = min(60, 10 + attempt * 5)
+            logger.warning(
+                "Telegram polling conflict detected. Another instance is using this bot token. "
+                "Waiting %s seconds before retrying: %s",
+                wait_seconds,
+                e,
             )
-                    logger.info("Final attempt - Bot starting with force override")
-                    application.run_polling(
-                        allowed_updates=["message"],
-                        drop_pending_updates=True,
-                    )
-                    break
-                except Exception as final_error:
-                    logger.error(f"Final attempt failed: {final_error}")
-                    break
-            time.sleep(0.5)
+            time.sleep(wait_seconds)
             continue
         except Exception as e:
             logger.error("Unhandled error in polling loop: %s. Retrying in 10 seconds…", e)

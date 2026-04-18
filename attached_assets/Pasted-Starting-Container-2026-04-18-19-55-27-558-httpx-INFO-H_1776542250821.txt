@@ -1,0 +1,134 @@
+Starting Container
+2026-04-18 19:55:27,558 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/deleteWebhook "HTTP/1.1 200 OK"
+2026-04-18 19:55:27,034 - video_downloader - INFO - Decoded YT_COOKIES_B64 to /tmp/youtube.txt
+2026-04-18 19:55:27,034 - video_downloader - INFO - IG_COOKIES_B64 present: 0 bytes
+2026-04-18 19:55:27,044 - video_downloader - INFO - YouTube cookies loaded from: /tmp/youtube.txt
+2026-04-18 19:55:27,183 - database - INFO - PostgreSQL database initialised.
+2026-04-18 19:55:27,034 - video_downloader - INFO - FB_COOKIES_B64 present: 0 bytes
+2026-04-18 19:55:27,049 - video_downloader - INFO - ffmpeg found at: /app/.venv/lib/python3.11/site-packages/imageio_ffmpeg/binaries
+2026-04-18 19:55:27,184 - __main__ - INFO - Bot startup attempt 1/3
+2026-04-18 19:55:27,034 - video_downloader - INFO - YT_COOKIES_B64 present: 2628 bytes
+2026-04-18 19:55:27,218 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-04-18 19:55:27,168 - database - INFO - PostgreSQL connection pool created (min=2, max=10)
+2026-04-18 19:55:27,218 - __main__ - INFO - Daily report job scheduled at 09:00 UTC
+2026-04-18 19:55:27,218 - __main__ - INFO - Bot starting… (polling mode)
+2026-04-18 19:55:27,471 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getMe "HTTP/1.1 200 OK"
+2026-04-18 19:55:27,559 - apscheduler.scheduler - INFO - Added job "daily_report" to job store "default"
+2026-04-18 19:55:27,559 - apscheduler.scheduler - INFO - Scheduler started
+2026-04-18 19:55:27,559 - telegram.ext.Application - INFO - Application started
+2026-04-18 19:55:31,886 - telegram.ext.Updater - ERROR - Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-18 19:55:31,887 - __main__ - WARNING - Transient error (ignored): Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2026-04-18 19:55:31,886 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 409 Conflict"
+2026-04-18 19:55:42,970 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:55:53,052 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:03,134 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:13,217 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:23,407 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:27,082 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:27,361 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-18 19:56:28,828 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:28,917 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-04-18 19:56:29,025 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/editMessageText "HTTP/1.1 200 OK"
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] 7zHrQ04d6: Downloading webpage
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[generic] 7zHrQ04d6: Downloading webpage
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[generic] 7zHrQ04d6: Downloading webpage
+[info] 34551122140668047: Downloading 1 format(s): V_HLSV3_MOBILE-328+V_HLSV3_MOBILE-audio1-1
+ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+2026-04-18 19:56:30,694 - video_downloader - WARNING - Attempt 1 failed: ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+[info] 34551122140668047: Downloading 1 format(s): V_HLSV3_MOBILE-328+V_HLSV3_MOBILE-audio1-1
+ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+2026-04-18 19:56:32,310 - video_downloader - WARNING - Attempt 2 failed: ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] 7zHrQ04d6: Downloading webpage
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[info] 34551122140668047: Downloading 1 format(s): V_HLSV3_MOBILE-328+V_HLSV3_MOBILE-audio1-1
+ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+2026-04-18 19:56:33,860 - video_downloader - ERROR - yt-dlp download error: ERROR: You have requested merging of multiple formats but ffmpeg is not installed. Aborting due to --abort-on-error
+2026-04-18 19:56:33,968 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-18 19:56:34,057 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/deleteMessage "HTTP/1.1 200 OK"
+2026-04-18 19:56:39,017 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:39,893 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:40,487 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-18 19:56:41,469 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/getUpdates "HTTP/1.1 200 OK"
+2026-04-18 19:56:41,661 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-04-18 19:56:41,872 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/editMessageText "HTTP/1.1 200 OK"
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] 7zHrQ04d6: Downloading webpage
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] 7zHrQ04d6: Downloading webpage
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[info] 34551122140668047: Downloading 1 format(s): V_HLSV3_MOBILE-audio1-1
+[hlsnative] Downloading m3u8 manifest
+[hlsnative] Total fragments: 4
+[download] Destination: /tmp/telegram_bot_downloads/You can call me baby…_34551122140668047.mp4
+
+[download]  25.0% of ~   3.43KiB at      0.00B/s ETA Unknown (frag 0/4)
+[download]  12.5% of ~   6.88KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]   5.5% of ~  33.69KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]  10.8% of ~  35.69KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]  19.8% of ~  39.69KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]  33.3% of ~  47.69KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]  26.5% of ~  63.69KiB at      0.00B/s ETA Unknown (frag 1/4)
+[download]  25.7% of ~  65.67KiB at      0.00B/s ETA Unknown (frag 2/4)
+[download]  40.9% of ~  43.68KiB at      0.00B/s ETA Unknown (frag 2/4)
+[download]  44.1% of ~  45.01KiB at      0.00B/s ETA Unknown (frag 2/4)
+
+[download]  50.0% of ~  47.68KiB at      0.00B/s ETA Unknown (frag 2/4)
+[download]  60.1% of ~  53.01KiB at      0.00B/s ETA Unknown (frag 2/4)
+[download]  51.4% of ~  63.68KiB at      0.00B/s ETA Unknown (frag 2/4)
+[download]  50.5% of ~  64.90KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  69.5% of ~  48.59KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  72.1% of ~  49.59KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  77.1% of ~  51.59KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  85.9% of ~  55.59KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  76.4% of ~  63.59KiB at      0.00B/s ETA Unknown (frag 3/4)
+[download]  75.4% of ~  64.41KiB at      0.00B/s ETA Unknown (frag 4/4)
+
+[download] 100.0% of ~  49.59KiB at      0.00B/s ETA Unknown (frag 4/4)
+[download] 100.0% of ~  51.59KiB at      0.00B/s ETA Unknown (frag 4/4)
+[download] 100.0% of ~  55.59KiB at      0.00B/s ETA Unknown (frag 4/4)
+[download] 100.0% of ~  57.17KiB at      0.00B/s ETA Unknown (frag 4/4)
+[download] 100.0% of ~  57.17KiB at      0.00B/s ETA Unknown (frag 5/4)
+[download] 100% of   57.17KiB in 00:00:00 at 1.16MiB/s                 
+WARNING: 34551122140668047: Possible MPEG-TS in MP4 container or malformed AAC timestamps. Install ffmpeg to fix this automatically
+ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location
+2026-04-18 19:56:43,292 - video_downloader - WARNING - Direct audio download failed for https://pin.it/7zHrQ04d6: ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location
+[generic] Extracting URL: https://pin.it/7zHrQ04d6
+[generic] 7zHrQ04d6: Downloading webpage
+2026-04-18 19:56:43,449 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/editMessageText "HTTP/1.1 200 OK"
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[generic] 7zHrQ04d6: Downloading webpage
+[redirect] Following redirect to https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8fa&sender=1043990894778263105&sfo=1
+[Pinterest] Extracting URL: https://www.pinterest.com/pin/34551122140668047/sent/?invite_code=a2199e515eac4f2c9c3ef7b5f69bd8f...90894778263105&sfo=1
+[Pinterest] 34551122140668047: Download Pin JSON metadata
+[Pinterest] 34551122140668047: Downloading m3u8 information
+[info] 34551122140668047: Downloading 1 format(s): V_HLSV3_MOBILE-328+V_HLSV3_MOBILE-audio1-1
+[download] /tmp/telegram_bot_downloads/You can call me baby…_34551122140668047.mp4 has already been downloaded
+[VideoConvertor] Not converting media file "/tmp/telegram_bot_downloads/You can call me baby…_34551122140668047.mp4"; already is in target format mp4
+2026-04-18 19:56:44,756 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/sendMessage "HTTP/1.1 200 OK"
+2026-04-18 19:56:44,952 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot7731476029:AAFF7g3M6hpqzQaQtv2djUkJfCfS8M08fxQ/deleteMessage "HTTP/1.1 200 OK"
