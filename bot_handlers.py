@@ -4,6 +4,7 @@ Telegram bot handlers for video downloading functionality.
 
 import os
 import re
+import time
 import asyncio
 import logging
 import datetime
@@ -17,7 +18,7 @@ from telegram.error import TelegramError, TimedOut, NetworkError
 
 from video_downloader import VideoDownloader
 from database import (
-    record_download, get_all_user_ids, get_all_users,
+    register_user, record_download, get_all_user_ids, get_all_users,
     get_global_stats,
     ban_user, unban_user, is_banned, get_user_info, get_user_info_by_username,
     get_daily_stats, get_download_history, init_db
@@ -58,9 +59,18 @@ def _is_supported(url: str) -> bool:
 
 def _detect_platform(url: str) -> str:
     url_lower = url.lower()
-    for name in ('tiktok', 'instagram', 'facebook', 'youtube', 'twitter', 'pinterest', 'x.com'):
-        if name in url_lower:
-            return name.capitalize()
+    if 'tiktok' in url_lower:
+        return 'TikTok'
+    if 'instagram' in url_lower:
+        return 'Instagram'
+    if 'facebook' in url_lower or 'fb.com' in url_lower:
+        return 'Facebook'
+    if 'youtube' in url_lower or 'youtu.be' in url_lower:
+        return 'YouTube'
+    if 'twitter' in url_lower or 'x.com' in url_lower or 't.co' in url_lower:
+        return 'Twitter/X'
+    if 'pinterest' in url_lower or 'pin.it' in url_lower:
+        return 'Pinterest'
     return 'Video'
 
 
@@ -81,27 +91,39 @@ async def _check_banned(update: Update) -> bool:
 
 
 def _make_progress_hook(loop, message):
+    """Return (hook, stop_fn). Call stop_fn() before deleting the message."""
     last_pct = [-1]
+    last_edit_time = [0.0]
+    stopped = [False]
+    MIN_INTERVAL = 3.0  # seconds between Telegram edits
 
     def hook(d):
+        if stopped[0]:
+            return
         if d.get('status') != 'downloading':
             return
         total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
         downloaded = d.get('downloaded_bytes', 0)
-        if total and total > 0:
-            pct = int(downloaded / total * 100)
-            rounded = int(pct / 5) * 5
-            if rounded != last_pct[0]:
-                last_pct[0] = rounded
-                asyncio.run_coroutine_threadsafe(
-                    message.edit_text(
-                        MESSAGES["downloading"].format(rounded),
-                        disable_web_page_preview=True
-                    ),
-                    loop
-                )
+        if not total or total <= 0:
+            return
+        pct = int(downloaded / total * 100)
+        rounded = (pct // 5) * 5
+        now = time.monotonic()
+        if rounded != last_pct[0] and (now - last_edit_time[0]) >= MIN_INTERVAL:
+            last_pct[0] = rounded
+            last_edit_time[0] = now
+            asyncio.run_coroutine_threadsafe(
+                message.edit_text(
+                    MESSAGES["downloading"].format(rounded),
+                    disable_web_page_preview=True
+                ),
+                loop
+            )
 
-    return hook
+    def stop():
+        stopped[0] = True
+
+    return hook, stop
 
 
 async def _send_video_file(context, chat_id, file_path, caption):
@@ -123,7 +145,8 @@ async def _send_audio_file(context, chat_id, file_path, caption):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
-        record_download(user.id, user.username or '', user.first_name or '')
+        # Register the user without incrementing the download counter
+        register_user(user.id, user.username or '', user.first_name or '')
         await update.message.reply_text(
             MESSAGES["start"], disable_web_page_preview=True
         )
@@ -193,6 +216,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(chat_id=uid, text=message_text)
                 sent += 1
+                await asyncio.sleep(0.05)  # Stay within Telegram's 30 msg/s flood limit
             except Exception:
                 pass
         await update.message.reply_text(MESSAGES["broadcast_done"].format(sent))
@@ -355,7 +379,7 @@ async def _do_download_and_send(
 ):
     """Run the actual download and send logic for a non-YouTube URL."""
     loop = asyncio.get_event_loop()
-    progress_hook = _make_progress_hook(loop, processing_message)
+    progress_hook, stop_hook = _make_progress_hook(loop, processing_message)
     platform = _detect_platform(url)
 
     try:
@@ -369,6 +393,9 @@ async def _do_download_and_send(
                 downloader.download_video, url, progress_hook
             )
             completed_msg = MESSAGES["completed"]
+
+        # Stop the progress hook before touching the message
+        stop_hook()
 
         if file_path:
             try:
@@ -415,6 +442,7 @@ async def _do_download_and_send(
             else:
                 await context.bot.send_message(chat_id, MESSAGES["error_download_failed"])
     finally:
+        stop_hook()
         try:
             await processing_message.delete()
         except Exception:
@@ -519,6 +547,10 @@ async def handle_download_callback(update: Update, context: ContextTypes.DEFAULT
         user_id = update.effective_user.id
         chat_id = query.message.chat_id
 
+        if is_banned(user_id):
+            await query.edit_message_text(MESSAGES["banned_message"])
+            return
+
         video_match = re.match(r'^dl_video_(.+)$', data)
         audio_match = re.match(r'^dl_audio_(.+)$', data)
 
@@ -566,6 +598,10 @@ async def handle_youtube_callback(update: Update, context: ContextTypes.DEFAULT_
         chat_id = query.message.chat_id
         loop = asyncio.get_event_loop()
 
+        if is_banned(user_id):
+            await query.edit_message_text(MESSAGES["banned_message"])
+            return
+
         video_match = re.match(r'^yt_video_(360|720|1080)_(.+)$', data)
         audio_match = re.match(r'^yt_audio_(.+)$', data)
 
@@ -591,12 +627,15 @@ async def handle_youtube_callback(update: Update, context: ContextTypes.DEFAULT_
 
         await query.edit_message_text(proc_text, disable_web_page_preview=True)
 
-        progress_hook = _make_progress_hook(loop, query.message)
+        progress_hook, stop_hook = _make_progress_hook(loop, query.message)
 
         file_path, result, quality_used = await asyncio.to_thread(
             downloader.download_youtube_with_fallback,
-            youtube_url, format_type, quality or 'audio', progress_hook
+            youtube_url, format_type, quality or '1080', progress_hook
         )
+
+        # Stop hook before any message operations
+        stop_hook()
 
         if file_path:
             # If quality was downgraded, let the user know

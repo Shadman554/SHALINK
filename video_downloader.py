@@ -71,6 +71,8 @@ class VideoDownloader:
         self.ffmpeg_location = self._find_ffmpeg_location()
         if self.ffmpeg_location:
             logger.info(f"ffmpeg found at: {self.ffmpeg_location}")
+            # Also inject into PATH so bare 'ffmpeg' / 'ffprobe' commands work (compress_video, etc.)
+            os.environ['PATH'] = self.ffmpeg_location + os.pathsep + os.environ.get('PATH', '')
         else:
             logger.warning("ffmpeg not found — audio conversion and format merging may fail")
 
@@ -85,9 +87,9 @@ class VideoDownloader:
         
         # Base download options
         self.ydl_opts = {
-            # bestvideo+bestaudio handles HLS-only platforms (e.g. Pinterest)
-            # where 'best' (combined) is unavailable; merges into mp4 via ffmpeg
-            'format': 'bestvideo+bestaudio/bestvideo/best',
+            # Try a pre-merged mp4 first, then fall back to merging streams.
+            # The merged fallback requires ffmpeg; we inject ffmpeg_location below.
+            'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
             'outtmpl': os.path.join(TEMP_DIR, '%(title).150B_%(id)s.%(ext)s'),
             'http_headers': {
@@ -99,6 +101,9 @@ class VideoDownloader:
                 'preferedformat': 'mp4'
             }]
         }
+        # Always inject ffmpeg location so yt-dlp can merge/convert on all platforms
+        if self.ffmpeg_location:
+            self.ydl_opts['ffmpeg_location'] = self.ffmpeg_location
         
         # Instagram specific options
         self.instagram_opts = {
@@ -126,6 +131,8 @@ class VideoDownloader:
                 'preferedformat': 'mp4'
             }]
         }
+        if self.ffmpeg_location:
+            self.tiktok_opts['ffmpeg_location'] = self.ffmpeg_location
         
         # TikTok watermark-removal APIs (tried in order – these all return **non-watermarked** links)
         self.tiktok_apis = [
@@ -344,10 +351,10 @@ class VideoDownloader:
                         info = ydl.extract_info(url, download=False)
                         if not info:
                             continue
-                            
+                        dl_start = time.time()
                         ydl.download([url])
                         title = info.get('title', 'instagram_video')
-                        downloaded_file = self._find_downloaded_file(title)
+                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
                         
                         if downloaded_file and os.path.exists(downloaded_file):
                             return downloaded_file, title
@@ -401,10 +408,10 @@ class VideoDownloader:
                         info = ydl.extract_info(url, download=False)
                         if not info:
                             continue
-                            
+                        dl_start = time.time()
                         ydl.download([url])
                         title = info.get('title', 'tiktok_video')
-                        downloaded_file = self._find_downloaded_file(title)
+                        downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
                         
                         if downloaded_file and os.path.exists(downloaded_file):
                             return downloaded_file, title
@@ -420,43 +427,6 @@ class VideoDownloader:
             logger.error(f"TikTok download error: {e}")
             return None, "tiktok_download_failed"
     
-    def _try_download(self, url: str, opts: dict) -> tuple[str | None, str]:
-        """Try downloading video with given options."""
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if not info:
-                    return None, "extract_failed"
-                
-                title = info.get('title', 'video')
-                
-                # Check if file size is available and within limits
-                filesize = info.get('filesize') or info.get('filesize_approx')
-                if filesize and filesize > MAX_FILE_SIZE:
-                    return None, "file_too_large"
-                
-                # Download the video
-                ydl.download([url])
-                
-                # Find the downloaded file
-                downloaded_file = self._find_downloaded_file(title)
-                
-                if downloaded_file and os.path.exists(downloaded_file):
-                    # Check actual file size
-                    if os.path.getsize(downloaded_file) > MAX_FILE_SIZE:
-                        os.remove(downloaded_file)
-                        return None, "file_too_large"
-                    
-                    return downloaded_file, title
-                else:
-                    return None, "download_failed"
-                    
-        except yt_dlp.DownloadError as e:
-            logger.error(f"yt-dlp download error: {e}")
-            return None, "download_failed"
-        except Exception as e:
-            logger.error(f"Unexpected error downloading {url}: {e}")
-            return None, "download_failed"
     
     def download_video(self, url: str, progress_hook=None) -> tuple[str | None, str]:
         """
@@ -468,7 +438,10 @@ class VideoDownloader:
         try:
             if not self.is_supported_platform(url):
                 return None, "unsupported_platform"
-            
+
+            if not self._check_disk_space():
+                return None, "file_too_large"
+
             # Clean up any existing files in temp directory
             self._cleanup_temp_files()
             
@@ -504,6 +477,7 @@ class VideoDownloader:
                     return None, "file_too_large"
                 
                 # Download the video with retries
+                dl_start = time.time()
                 for attempt in range(3):
                     try:
                         ydl.download([url])
@@ -515,7 +489,7 @@ class VideoDownloader:
                         time.sleep(1)
                 
                 # Find the downloaded file
-                downloaded_file = self._find_downloaded_file(title)
+                downloaded_file = self._find_downloaded_file(title, min_mtime=dl_start)
                 
                 if downloaded_file and os.path.exists(downloaded_file):
                     # Check actual file size
@@ -566,19 +540,40 @@ class VideoDownloader:
                 pass
             return None, "download_failed"
 
-    def _find_downloaded_file(self, title: str) -> str | None:
-        """Find the downloaded file in the temp directory."""
+    def _find_downloaded_file(self, title: str, min_mtime: float = 0.0) -> str | None:
+        """Find the downloaded file in the temp directory.
+
+        Args:
+            title: Expected video title (used for filename prefix matching).
+            min_mtime: Only consider files created/modified after this time
+                       (use time.time() snapshot taken just before download).
+        """
         try:
-            for file in os.listdir(TEMP_DIR):
-                if file.startswith(title[:20]):  # Match first 20 chars of title
-                    return os.path.join(TEMP_DIR, file)
-            
-            # If title-based search fails, get the newest file
-            files = [os.path.join(TEMP_DIR, f) for f in os.listdir(TEMP_DIR) if os.path.isfile(os.path.join(TEMP_DIR, f))]
-            if files:
-                return max(files, key=os.path.getctime)
-            
-            return None
+            valid_exts = ('.mp4', '.mp3', '.webm', '.m4a', '.mkv', '.mov', '.avi')
+            candidates = []
+            for fname in os.listdir(TEMP_DIR):
+                fpath = os.path.join(TEMP_DIR, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                if not fname.lower().endswith(valid_exts):
+                    continue
+                if min_mtime and os.path.getmtime(fpath) < min_mtime:
+                    continue
+                candidates.append(fpath)
+
+            if not candidates:
+                return None
+
+            # Prefer a file whose name starts with the beginning of the title
+            safe_prefix = re.sub(r'[^\w\- ]', '', title)[:20].strip()
+            if safe_prefix:
+                title_matches = [f for f in candidates if os.path.basename(f).startswith(safe_prefix)]
+                if title_matches:
+                    return max(title_matches, key=os.path.getmtime)
+
+            # Fall back to the most recently modified file among candidates
+            return max(candidates, key=os.path.getmtime)
+
         except Exception as e:
             logger.error(f"Error finding downloaded file: {e}")
             return None
@@ -770,6 +765,19 @@ class VideoDownloader:
             logger.error(f"Audio extraction error: {e}")
             return None, 'audio_extract_failed'
 
+    def _check_disk_space(self, min_mb: int = 200) -> bool:
+        """Return False if free space in TEMP_DIR is below min_mb megabytes."""
+        try:
+            import shutil as _shutil
+            stat = _shutil.disk_usage(TEMP_DIR)
+            free_mb = stat.free / (1024 * 1024)
+            if free_mb < min_mb:
+                logger.error(f"Low disk space: {free_mb:.0f} MB free (need {min_mb} MB)")
+                return False
+            return True
+        except Exception:
+            return True  # Don't block downloads if check itself fails
+
     def download_audio(self, url: str, progress_hook=None) -> tuple[str | None, str]:
         """Download audio from any non-YouTube URL as MP3.
 
@@ -777,9 +785,13 @@ class VideoDownloader:
         Twitter, Facebook, TikTok). Falls back to video download + ffmpeg
         extraction if that fails.
         """
+        if not self._check_disk_space():
+            return None, "file_too_large"
+
+        self._cleanup_temp_files()
+
         # --- Attempt 1: direct audio via yt-dlp FFmpegExtractAudio ---
         try:
-            self._cleanup_temp_files()
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(TEMP_DIR, '%(title).100B_%(id)s.%(ext)s'),
@@ -796,25 +808,32 @@ class VideoDownloader:
                     'preferredquality': '192',
                 }],
             }
+            if self.ffmpeg_location:
+                ydl_opts['ffmpeg_location'] = self.ffmpeg_location
             if progress_hook:
                 ydl_opts['progress_hooks'] = [progress_hook]
 
+            # Inject platform-specific cookies so private content works
+            if 'instagram.com' in url and self.cookies_instagram:
+                ydl_opts['cookiefile'] = self.cookies_instagram
+            elif any(s in url for s in ('facebook.com', 'fb.com')) and self.cookies_facebook:
+                ydl_opts['cookiefile'] = self.cookies_facebook
+
+            dl_start = time.time()
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 if not info:
                     raise ValueError("Could not extract info")
                 ydl.download([url])
 
-            # Find the most recently created mp3
+            # Find the most recently modified mp3
             mp3_files = [
-                f for f in os.listdir(TEMP_DIR) if f.lower().endswith('.mp3')
+                os.path.join(TEMP_DIR, f)
+                for f in os.listdir(TEMP_DIR)
+                if f.lower().endswith('.mp3') and os.path.getmtime(os.path.join(TEMP_DIR, f)) >= dl_start
             ]
             if mp3_files:
-                mp3_files.sort(
-                    key=lambda x: os.path.getctime(os.path.join(TEMP_DIR, x)),
-                    reverse=True
-                )
-                result_path = os.path.join(TEMP_DIR, mp3_files[0])
+                result_path = max(mp3_files, key=os.path.getmtime)
                 if os.path.exists(result_path) and os.path.getsize(result_path) > 0:
                     logger.info(f"Direct audio download succeeded: {result_path}")
                     return result_path, 'success'
