@@ -83,6 +83,6 @@ TikTok, Instagram, Facebook, YouTube, Twitter/X, Pinterest
 ## Important Notes
 
 - Only **one** bot instance can poll Telegram at a time. If you run this on Replit, stop any other deployments (Railway, etc.) using the same token, or they will conflict.
-- Railway deployments install `ffmpeg-full` via `nixpacks.toml` so both `ffmpeg` and `ffprobe` are available. The Python `imageio-ffmpeg` package alone may provide `ffmpeg` but not `ffprobe`, which causes yt-dlp post-processing failures.
+- Railway deployments install system `ffmpeg` via `nixpacks.toml`; the code can fall back to `imageio-ffmpeg` if Railway misses the package, but system `ffmpeg`/`ffprobe` is still recommended for best audio extraction and merging reliability.
 - `runtime.txt` uses `python-3.11.9` for Railway compatibility, while Replit uses Python 3.12 via `.replit`.
 - If bot tokens appear in external logs or screenshots, rotate the Telegram token in @BotFather and update the secret.

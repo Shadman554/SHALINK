@@ -71,12 +71,17 @@ class VideoDownloader:
         else:
             logger.info("No YouTube cookies found — downloads may fail on server IPs")
 
-        # Locate ffmpeg — nix-installed binaries may not be in Python's PATH at runtime
+        self.ffmpeg_cmd = 'ffmpeg'
+        self.ffprobe_cmd = 'ffprobe'
         self.ffmpeg_location = self._find_ffmpeg_location()
         if self.ffmpeg_location:
             logger.info(f"ffmpeg found at: {self.ffmpeg_location}")
-            # Also inject into PATH so bare 'ffmpeg' / 'ffprobe' commands work (compress_video, etc.)
-            os.environ['PATH'] = self.ffmpeg_location + os.pathsep + os.environ.get('PATH', '')
+            ffmpeg_dir = self.ffmpeg_location if os.path.isdir(self.ffmpeg_location) else os.path.dirname(self.ffmpeg_location)
+            os.environ['PATH'] = ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+            self.ffmpeg_cmd = self.ffmpeg_location if os.path.isfile(self.ffmpeg_location) else os.path.join(self.ffmpeg_location, 'ffmpeg')
+            probe_path = os.path.join(ffmpeg_dir, 'ffprobe')
+            if os.path.isfile(probe_path):
+                self.ffprobe_cmd = probe_path
         else:
             logger.warning("ffmpeg not found — audio conversion and format merging may fail")
 
@@ -147,7 +152,7 @@ class VideoDownloader:
         ]
         
     def _find_ffmpeg_location(self) -> str | None:
-        """Return the directory containing the ffmpeg binary, trying PATH, imageio-ffmpeg bundle, and known nix/system locations."""
+        """Return ffmpeg location for yt-dlp, preferring a directory with ffmpeg and ffprobe."""
         def has_pair(directory: str | None) -> bool:
             if not directory:
                 return False
@@ -188,6 +193,19 @@ class VideoDownloader:
                 probe,
             )
             return os.path.dirname(exe)
+
+        if exe:
+            logger.warning("ffmpeg found without ffprobe at %s; merge will work but probing may be limited", exe)
+            return exe
+
+        try:
+            import imageio_ffmpeg
+            bundled = imageio_ffmpeg.get_ffmpeg_exe()
+            if bundled and os.path.isfile(bundled):
+                logger.warning("Using bundled imageio-ffmpeg fallback at %s; install system ffmpeg on Railway for best results", bundled)
+                return bundled
+        except Exception as e:
+            logger.warning("imageio-ffmpeg fallback unavailable: %s", e)
 
         return None
 
@@ -820,13 +838,13 @@ class VideoDownloader:
             base = os.path.splitext(file_path)[0]
             out = base + '_audio.mp3'
             # First check if the file has an audio stream
-            probe_cmd = ['ffprobe', '-v', 'error', '-select_streams', 'a',
+            probe_cmd = [self.ffprobe_cmd, '-v', 'error', '-select_streams', 'a',
                          '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', file_path]
             probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
             if not probe.stdout.strip():
                 logger.warning(f"No audio stream found in: {file_path}")
                 return None, 'no_audio_stream'
-            cmd = ['ffmpeg', '-i', file_path, '-vn', '-q:a', '2', '-y', out]
+            cmd = [self.ffmpeg_cmd, '-i', file_path, '-vn', '-q:a', '2', '-y', out]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if result.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0:
                 return out, 'success'
@@ -971,7 +989,7 @@ class VideoDownloader:
             
             # FFmpeg compression command
             cmd = [
-                'ffmpeg', '-i', input_path,
+                self.ffmpeg_cmd, '-i', input_path,
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '28',
