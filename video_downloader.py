@@ -779,10 +779,10 @@ class VideoDownloader:
                     'extractor_args': {'youtube': {'player_client': ['android']}},
                     'format': simple_fmt,
                 },
-                # Attempt 3: tv_embedded — no auth required
+                # Attempt 3: android_vr — no auth, no JS needed
                 {
                     **_proxy(2),
-                    'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
+                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
                     'format': simple_fmt,
                 },
                 # Attempt 4: mweb — mobile web client
@@ -791,11 +791,12 @@ class VideoDownloader:
                     'extractor_args': {'youtube': {'player_client': ['mweb']}},
                     'format': simple_fmt,
                 },
-                # Attempt 5: web + cookies — full JS challenge solving (needs Node.js)
+                # Attempt 5: web + cookies — JS challenge solving via Deno
                 {
                     **_proxy(4),
                     **cookie_override,
                     'extractor_args': {'youtube': {'player_client': ['web']}},
+                    'js_runtimes': ['deno'],
                     'format': simple_fmt,
                 },
             ]
