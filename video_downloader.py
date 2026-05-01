@@ -71,12 +71,16 @@ class VideoDownloader:
         else:
             logger.info("No YouTube cookies found — downloads may fail on server IPs")
 
-        # Proxy support — set YOUTUBE_PROXY env var to route YouTube through a residential proxy
-        # e.g. http://user:pass@host:port or socks5://user:pass@host:port
-        self.youtube_proxy = os.getenv('YOUTUBE_PROXY', '').strip() or None
-        if self.youtube_proxy:
-            logger.info("YouTube proxy enabled")
+        # Proxy support — supports single proxy or rotating list
+        # YOUTUBE_PROXY: single proxy URL e.g. http://user:pass@host:port
+        # YOUTUBE_PROXY_LIST: comma-separated proxy URLs for rotation
+        self.youtube_proxies = self._load_proxy_list()
+        if self.youtube_proxies:
+            logger.info(f"YouTube proxy pool loaded: {len(self.youtube_proxies)} proxies")
+            # Keep backward compat
+            self.youtube_proxy = self.youtube_proxies[0]
         else:
+            self.youtube_proxy = None
             logger.info("No YouTube proxy configured — Railway IP may be rate-limited by YouTube")
 
         self.ffmpeg_cmd = 'ffmpeg'
@@ -159,6 +163,34 @@ class VideoDownloader:
             "https://api.dd01.ru/api/tiktok"   # GET ?url=<video_url>        → json.url
         ]
         
+    def _load_proxy_list(self) -> list[str]:
+        """Load proxy list from env vars. Supports both single and rotating proxies."""
+        import random
+        proxies = []
+
+        # YOUTUBE_PROXY_LIST: comma-separated list of proxy URLs
+        proxy_list_env = os.getenv('YOUTUBE_PROXY_LIST', '').strip()
+        if proxy_list_env:
+            for entry in proxy_list_env.split(','):
+                entry = entry.strip()
+                if entry:
+                    proxies.append(entry)
+
+        # YOUTUBE_PROXY: fallback single proxy
+        if not proxies:
+            single = os.getenv('YOUTUBE_PROXY', '').strip()
+            if single:
+                proxies.append(single)
+
+        random.shuffle(proxies)
+        return proxies
+
+    def _get_next_proxy(self, attempt_index: int = 0) -> str | None:
+        """Return a proxy URL for the given attempt index, rotating through the pool."""
+        if not self.youtube_proxies:
+            return None
+        return self.youtube_proxies[attempt_index % len(self.youtube_proxies)]
+
     def _find_ffmpeg_location(self) -> str | None:
         """Return ffmpeg location for yt-dlp, preferring a directory with ffmpeg and ffprobe."""
         def has_pair(directory: str | None) -> bool:
@@ -728,39 +760,40 @@ class VideoDownloader:
             # cookiefile — yt-dlp skips them entirely when one is present.
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
-            # Proxy override — injected into every attempt when YOUTUBE_PROXY is set
-            proxy_override = {'proxy': self.youtube_proxy} if self.youtube_proxy else {}
-
             simple_fmt = f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best'
+
+            def _proxy(i):
+                p = self._get_next_proxy(i)
+                return {'proxy': p} if p else {}
 
             attempt_configs = [
                 # Attempt 1: ios — no cookies, no JS needed, most reliable
                 {
-                    **proxy_override,
+                    **_proxy(0),
                     'extractor_args': {'youtube': {'player_client': ['ios']}},
                     'format': f'best[height<={height}][ext=mp4]/best[height<={height}]/best' if format_type == 'video' else 'bestaudio/best',
                 },
                 # Attempt 2: android — no cookies, no JS needed
                 {
-                    **proxy_override,
+                    **_proxy(1),
                     'extractor_args': {'youtube': {'player_client': ['android']}},
                     'format': simple_fmt,
                 },
                 # Attempt 3: tv_embedded — no auth required
                 {
-                    **proxy_override,
+                    **_proxy(2),
                     'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
                     'format': simple_fmt,
                 },
                 # Attempt 4: mweb — mobile web client
                 {
-                    **proxy_override,
+                    **_proxy(3),
                     'extractor_args': {'youtube': {'player_client': ['mweb']}},
                     'format': simple_fmt,
                 },
                 # Attempt 5: web + cookies — full JS challenge solving (needs Node.js)
                 {
-                    **proxy_override,
+                    **_proxy(4),
                     **cookie_override,
                     'extractor_args': {'youtube': {'player_client': ['web']}},
                     'format': simple_fmt,
