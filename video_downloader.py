@@ -716,30 +716,45 @@ class VideoDownloader:
                 }
 
             # cookie_override is injected only into attempts that use the web
-            # client (which supports cookies). android_vr must NOT receive a
-            # cookiefile — yt-dlp skips it entirely when one is present.
+            # client (which supports cookies). ios/android must NOT receive a
+            # cookiefile — yt-dlp skips them entirely when one is present.
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
+            simple_fmt = f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best'
+
             attempt_configs = [
-                # Attempt 1: android_vr first — no cookies (not skipped), no n-challenge,
-                # must run before web client so IP stays clean for this client
-                {'extractor_args': {'youtube': {'player_client': ['android_vr']}}},
-                # Attempt 2: android_vr, simplified format fallback
+                # Attempt 1: ios — no cookies, no JS needed, most reliable
                 {
-                    'extractor_args': {'youtube': {'player_client': ['android_vr']}},
-                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                    'extractor_args': {'youtube': {'player_client': ['ios']}},
+                    'format': f'best[height<={height}][ext=mp4]/best[height<={height}]/best' if format_type == 'video' else 'bestaudio/best',
                 },
-                # Attempt 3: web + cookies as last resort
+                # Attempt 2: android — no cookies, no JS needed
+                {
+                    'extractor_args': {'youtube': {'player_client': ['android']}},
+                    'format': simple_fmt,
+                },
+                # Attempt 3: tv_embedded — no auth required
+                {
+                    'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
+                    'format': simple_fmt,
+                },
+                # Attempt 4: mweb — mobile web client
+                {
+                    'extractor_args': {'youtube': {'player_client': ['mweb']}},
+                    'format': simple_fmt,
+                },
+                # Attempt 5: web + cookies — full JS challenge solving (needs Node.js)
                 {
                     **cookie_override,
                     'extractor_args': {'youtube': {'player_client': ['web']}},
-                    'format': f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best',
+                    'format': simple_fmt,
                 },
             ]
 
-            for attempt in range(1, 4):
+            total_attempts = len(attempt_configs)
+            for attempt in range(1, total_attempts + 1):
                 try:
-                    logger.info(f"YouTube download attempt {attempt}/3")
+                    logger.info(f"YouTube download attempt {attempt}/{total_attempts}")
 
                     current_opts = {**ydl_opts, **attempt_configs[attempt - 1]}
 
@@ -748,7 +763,7 @@ class VideoDownloader:
                     with yt_dlp.YoutubeDL(current_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
                         if not info:
-                            if attempt == 3:
+                            if attempt == total_attempts:
                                 return None, "Failed to extract video information after all attempts"
                             continue
 
@@ -774,7 +789,7 @@ class VideoDownloader:
                             return actual_file, "Success"
                         
                         # If this attempt failed, try the next one
-                        if attempt == 3:
+                        if attempt == total_attempts:
                             shutil.rmtree(work_dir, ignore_errors=True)
                             return None, f"Downloaded file not found for {format_type} after all attempts"
                         else:
@@ -783,7 +798,7 @@ class VideoDownloader:
                             
                 except Exception as e:
                     logger.error(f"YouTube download attempt {attempt} failed: {e}")
-                    if attempt == 3:
+                    if attempt == total_attempts:
                         shutil.rmtree(work_dir, ignore_errors=True)
                         return None, f"Download failed after all attempts: {str(e)}"
                     continue
