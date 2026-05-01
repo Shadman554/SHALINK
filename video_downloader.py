@@ -71,6 +71,14 @@ class VideoDownloader:
         else:
             logger.info("No YouTube cookies found — downloads may fail on server IPs")
 
+        # Proxy support — set YOUTUBE_PROXY env var to route YouTube through a residential proxy
+        # e.g. http://user:pass@host:port or socks5://user:pass@host:port
+        self.youtube_proxy = os.getenv('YOUTUBE_PROXY', '').strip() or None
+        if self.youtube_proxy:
+            logger.info("YouTube proxy enabled")
+        else:
+            logger.info("No YouTube proxy configured — Railway IP may be rate-limited by YouTube")
+
         self.ffmpeg_cmd = 'ffmpeg'
         self.ffprobe_cmd = 'ffprobe'
         self.ffmpeg_location = self._find_ffmpeg_location()
@@ -720,31 +728,39 @@ class VideoDownloader:
             # cookiefile — yt-dlp skips them entirely when one is present.
             cookie_override = {'cookiefile': self.cookies_youtube} if self.cookies_youtube else {}
 
+            # Proxy override — injected into every attempt when YOUTUBE_PROXY is set
+            proxy_override = {'proxy': self.youtube_proxy} if self.youtube_proxy else {}
+
             simple_fmt = f'best[height<={height}]/best[height<=480]/best' if format_type == 'video' else 'bestaudio/best'
 
             attempt_configs = [
                 # Attempt 1: ios — no cookies, no JS needed, most reliable
                 {
+                    **proxy_override,
                     'extractor_args': {'youtube': {'player_client': ['ios']}},
                     'format': f'best[height<={height}][ext=mp4]/best[height<={height}]/best' if format_type == 'video' else 'bestaudio/best',
                 },
                 # Attempt 2: android — no cookies, no JS needed
                 {
+                    **proxy_override,
                     'extractor_args': {'youtube': {'player_client': ['android']}},
                     'format': simple_fmt,
                 },
                 # Attempt 3: tv_embedded — no auth required
                 {
+                    **proxy_override,
                     'extractor_args': {'youtube': {'player_client': ['tv_embedded']}},
                     'format': simple_fmt,
                 },
                 # Attempt 4: mweb — mobile web client
                 {
+                    **proxy_override,
                     'extractor_args': {'youtube': {'player_client': ['mweb']}},
                     'format': simple_fmt,
                 },
                 # Attempt 5: web + cookies — full JS challenge solving (needs Node.js)
                 {
+                    **proxy_override,
                     **cookie_override,
                     'extractor_args': {'youtube': {'player_client': ['web']}},
                     'format': simple_fmt,
